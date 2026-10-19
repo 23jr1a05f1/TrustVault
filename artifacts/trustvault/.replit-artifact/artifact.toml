@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "TrustVault"
+description = "A secure document-sharing platform for the Thesnovasys hiring challenge, designed to demonstrate clear role-based access controls, private file handling, and auditable document activity."
+version = "1.0.0"
+id = "artifacts/trustvault"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 22212
+
+[services.development]
+run = "pnpm --filter @workspace/trustvault run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/trustvault", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/trustvault/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "22212"
+BASE_PATH = "/"

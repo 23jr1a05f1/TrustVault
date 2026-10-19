@@ -1,10 +1,13 @@
-# [Project name]
+# TrustVault
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+TrustVault is a secure document-sharing platform being built in stages for the Thesnovasys hiring challenge.
 
 ## Run & Operate
 
 - `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- `pnpm --filter @workspace/trustvault run dev` — run the React web app
+- From `artifacts/trustvault/backend`, `python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000` — run the FastAPI starter
+- From `artifacts/trustvault/backend`, `python -m pytest` — run the FastAPI tests
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
@@ -14,7 +17,9 @@ _Replace the heading above with the project's name, and this line with one sente
 ## Stack
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
+- TrustVault frontend: React + TypeScript + Vite
+- Shared workspace API: Express 5 (not the TrustVault-specific API)
+- TrustVault API: Python 3.11 + FastAPI
 - DB: PostgreSQL + Drizzle ORM
 - Validation: Zod (`zod/v4`), `drizzle-zod`
 - API codegen: Orval (from OpenAPI spec)
@@ -22,19 +27,24 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/trustvault/src/` — TrustVault React frontend (currently scaffold only)
+- `artifacts/trustvault/backend/` — TrustVault FastAPI starter and pytest tests
+- `docs/API.md` — current API surface and documentation locations
+- `README.md`, `THREATS.md`, and `PROMPTS.md` — project overview, security scope, and truthful prompt record
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- Keep TrustVault's FastAPI service separate from the workspace's existing Express API because the brief explicitly requires Python/FastAPI.
+- The starter API exposes only health; authentication, database schema, document access, and audit behavior are not implemented yet.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+Planned: role-based access for administrators, document owners, and viewers; private document storage; per-document permissions; search; and auditable activity. These capabilities must not be described as available until implemented and verified.
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- Keep the project readable for a beginner and suitable for explaining in an interview.
+- Build and verify in stages; do not implement everything in one unverified step.
 
 ## Gotchas
 
