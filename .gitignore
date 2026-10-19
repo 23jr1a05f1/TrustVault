@@ -52,3 +52,16 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Secrets and environment files
+.env
+.env.*
+!.env.example
+!.env.sample
+
+# Private Replit conversation attachments
+.conversation/attached_assets/
+
+# Python virtual environments and secrets
+venv/
+ENV/
