@@ -17,8 +17,15 @@ From this directory:
 python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Open `/healthz` for the starter health check or `/docs` for the generated API
-documentation.
+Apply the development database schema and start the API:
+
+```bash
+python -m alembic upgrade head
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+Open `/healthz` for health checks, `/docs` for generated API documentation, or
+`/api/me` after a Clerk session is available.
 
 ## Test
 
@@ -28,4 +35,7 @@ From this directory:
 python -m pytest
 ```
 
-The current API has no database connection and no protected document routes.
+The first migration creates the TrustVault user, document metadata, document
+permission, and append-only audit tables. Protected API routes verify Clerk
+sessions and enforce roles from the database. See `docs/SECURITY.md` for
+configuration, migration, and test coverage details.

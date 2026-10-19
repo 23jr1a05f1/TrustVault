@@ -6,13 +6,14 @@ TrustVault is a secure document-sharing platform being built in stages for the T
 
 - `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
 - `pnpm --filter @workspace/trustvault run dev` — run the React web app
-- From `artifacts/trustvault/backend`, `python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000` — run the FastAPI starter
+- From `artifacts/trustvault/backend`, `python -m alembic upgrade head` — apply the TrustVault development schema
+- From `artifacts/trustvault/backend`, `python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000` — run the FastAPI API
 - From `artifacts/trustvault/backend`, `python -m pytest` — run the FastAPI tests
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- Required env: `DATABASE_URL`, managed Clerk secrets. Optional: `CLERK_AUTHORIZED_PARTIES` (comma-separated origin allowlist), `TRUSTVAULT_ADMIN_CLERK_IDS` (server-side bootstrap admin IDs).
 
 ## Stack
 
@@ -20,7 +21,8 @@ TrustVault is a secure document-sharing platform being built in stages for the T
 - TrustVault frontend: React + TypeScript + Vite
 - Shared workspace API: Express 5 (not the TrustVault-specific API)
 - TrustVault API: Python 3.11 + FastAPI
-- DB: PostgreSQL + Drizzle ORM
+- TrustVault DB: PostgreSQL + SQLAlchemy + Alembic
+- Shared workspace DB package: Drizzle ORM
 - Validation: Zod (`zod/v4`), `drizzle-zod`
 - API codegen: Orval (from OpenAPI spec)
 - Build: esbuild (CJS bundle)
@@ -28,14 +30,16 @@ TrustVault is a secure document-sharing platform being built in stages for the T
 ## Where things live
 
 - `artifacts/trustvault/src/` — TrustVault React frontend (currently scaffold only)
-- `artifacts/trustvault/backend/` — TrustVault FastAPI starter and pytest tests
+- `artifacts/trustvault/backend/` — TrustVault FastAPI API, migrations, and pytest tests
 - `docs/API.md` — current API surface and documentation locations
+- `docs/SECURITY.md` — security controls, migration instructions, and limitations
 - `README.md`, `THREATS.md`, and `PROMPTS.md` — project overview, security scope, and truthful prompt record
 
 ## Architecture decisions
 
 - Keep TrustVault's FastAPI service separate from the workspace's existing Express API because the brief explicitly requires Python/FastAPI.
-- The starter API exposes only health; authentication, database schema, document access, and audit behavior are not implemented yet.
+- FastAPI verifies Clerk sessions and enforces roles from PostgreSQL; the Express API's Clerk middleware is not a substitute for TrustVault authorization.
+- The first security migration and basic protected metadata/permission routes are in place. File storage, upload/download, search, and the user-facing authentication flow remain pending.
 
 ## Product
 

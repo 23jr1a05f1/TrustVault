@@ -2,7 +2,7 @@
 
 ## Status
 
-This is an initial scope note, not a completed threat model and not evidence that TrustVault is secure. The current starter API only reports service health.
+This is an evolving scope note, not a completed threat model and not evidence that TrustVault is secure. The current API has a security foundation but no private document storage or file operations.
 
 ## Assets and boundaries to address
 
@@ -21,6 +21,19 @@ This is an initial scope note, not a completed threat model and not evidence tha
 - A reusable public file URL could bypass API authorization.
 - Ordinary application writes must not be able to rewrite or erase audit history; the chosen design and its limits must be documented.
 
+## Implemented and tested in the security foundation
+
+- Clerk session verification on protected FastAPI routes with an authorized-party check.
+- Database-backed account roles and document-scoped read/edit grants.
+- Denial of document ID enumeration, server-side authorization, and immediate
+  effect of permission revocation.
+- Audit rows for protected access and role/permission changes; PostgreSQL
+  rejects ordinary `UPDATE` and `DELETE` operations on audit rows.
+- Unit/API tests cover missing sessions, role escalation, grants/revocation,
+  viewer restrictions, document ID concealment, and audit immutability.
+
 ## Not yet implemented
 
-Authentication, authorization, PostgreSQL schema, migrations, private storage, upload validation, audit logging, and the corresponding security tests are all pending. Do not treat this document as a security review.
+Private storage, upload validation, download authorization, malware scanning,
+search, rate limits, independent audit export, and a full security review remain
+pending. Do not treat this document as a security review.
