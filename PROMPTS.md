@@ -2,29 +2,40 @@
 
 ## Purpose
 
-This file records AI assistance actually used during TrustVault development. Entries must reflect genuine interactions and must not be invented or backdated.
+This file records genuine AI-assisted development work performed on TrustVault. Entries must reflect actual interactions and outcomes. Do not invent prompts, test results, dates, or commit history.
 
-For each recorded interaction, include:
+For each significant interaction, record:
 
-- **Date:** The actual date of the interaction.
-- **Prompt:** The prompt actually submitted.
-- **AI output:** A concise summary of the response received.
-- **Mistake or limitation:** A specific issue found in the output, or state honestly if none has been identified.
-- **Correction:** The actual change made to address the issue.
-- **Verification:** The test, command, or manual check used to verify the change.
-- **Commit:** The Git commit containing the change, when applicable.
+- **Date:** Actual interaction date.
+- **Task:** What was being worked on.
+- **Prompt actually used:** The genuine user prompt.
+- **AI output summary:** A concise description of the assistance provided.
+- **Mistake or limitation:** A specific issue identified, or an honest statement if none was identified.
+- **Correction:** The change actually made.
+- **Verification:** The command, test, or manual check performed and its actual result.
+- **Commit:** The real commit hash or GitHub link, when applicable.
 
 ## Development History
 
-No complete, verified prompt entries have been added to this file yet.
+### Entry — 21 October 2026
 
-Add an entry after each significant AI-assisted development task. Use the original prompt and actual results from the conversation; do not invent prompts, test outcomes, dates, or commit links.
+- **Task:** Update the TrustVault threat model to reflect the implemented document upload and download functionality.
 
-Include authorization, access-control, and audit-related work when those topics are genuinely part of the interaction.
+- **Prompt actually used:** "first complete the security code i think its done now u viewed threats update this then for next files"
+
+- **AI output summary:** Reviewed the existing threat model and prepared an updated version covering document upload limits, private file storage, authorized downloads, permission revocation, audit events, and outstanding production security risks.
+
+- **Specific mistake or limitation identified:** The previous threat model incorrectly listed private file storage, upload validation, and authorized downloads as pending, although the current implementation and automated tests cover important parts of these features. Production storage durability and deployment security have not been verified.
+
+- **Correction made:** Updated `THREATS.md` to distinguish implemented controls from outstanding risks. Updated `docs/SECURITY.md` to reflect the current document endpoints, upload-size limit, authorization checks, and known limitations.
+
+- **Verification performed and actual result:** `git status --short` showed `M THREATS.md` and `M docs/SECURITY.md`. The latest full backend test run before these documentation edits reported `16 passed in 0.65s`. The tests should be rerun before the documentation changes are committed.
+
+- **Commit hash or GitHub commit link:** Pending. Documentation changes have not yet been committed.
 
 ## Entry Template
 
-Copy this template for each genuine interaction and fill it with verified information.
+Copy this template for each future significant AI-assisted development task. Keep the original prompt and record actual results.
 
 ### Entry — [Actual date]
 
@@ -35,4 +46,3 @@ Copy this template for each genuine interaction and fill it with verified inform
 - **Correction made:**
 - **Verification performed and actual result:**
 - **Commit hash or GitHub commit link:**
-

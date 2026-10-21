@@ -2,140 +2,154 @@
 
 ## 1. Project Status
 
-TrustVault is a document-sharing security project for the Thesnovasys hiring challenge.
+TrustVault is a document-sharing security project for the Snovasys hiring challenge. The project includes a backend security foundation, private document upload and download endpoints, server-side permission checks, audit events, and automated tests.
 
-The current version contains a backend security foundation and automated tests. It is not yet a complete document-sharing application and has not undergone a full security review.
+The local test suite most recently passed 16 tests. This is evidence of the tested behavior, not proof that the application is free from vulnerabilities or ready for production.
 
-This document records identified risks, existing controls, and remaining work. It is not a certification that the application is secure.
+This document identifies assets, trust boundaries, threats, existing controls, and remaining work. It is not a penetration test, certification, or independent security review.
 
 ## 2. Assets to Protect
 
 - User accounts, identities, and authentication sessions.
-- Account roles, including administrator, document owner, and viewer.
+- Account roles, including administrators and members.
 - Document contents and metadata.
 - Document-specific read and edit permissions.
 - Uploaded files and download access.
 - Audit records of successful and denied actions.
 - Database contents, credentials, and application secrets.
+- Availability and integrity of the application and its storage.
 
 ## 3. Trust Boundaries
 
-- **Frontend to backend:** The backend must independently validate every request. Frontend checks alone are not security controls.
-- **User to document:** A user must not access another user's documents without explicit permission.
+- **Frontend to backend:** The backend must independently validate and authorize every protected request.
+- **User to document:** Users must not access another user's documents without appropriate permission.
 - **Authentication to authorization:** A valid login does not automatically grant access to every document or administrative function.
-- **Application to database:** Database access must follow least-privilege principles.
-- **Application to file storage:** Files must not be accessible through public or reusable URLs that bypass authorization.
-- **Application to audit records:** Ordinary application actions must not be able to alter or erase protected audit history.
+- **Application to database:** Database access should follow least-privilege principles.
+- **Application to file storage:** Files must remain private and downloads must pass through server-side authorization.
+- **Application to audit records:** Ordinary application operations should not be able to alter or erase protected audit history.
+- **Development to production:** Local test success does not establish that production configuration, storage, or deployment is secure.
 
 ## 4. Threats and Mitigations
 
 ### T1. Unauthorized Document Access
 
-**Threat:** A user guesses or obtains another document's identifier and attempts to read its contents.
+**Threat:** A user guesses or obtains another document's identifier and attempts to access its contents.
 
-**Required mitigation:** Check authorization on the server for every document request. Do not rely on hidden buttons or frontend restrictions.
+**Existing control:** The download endpoint checks the current server-side document permissions before returning a file. Unauthorized or unknown document downloads return `404`.
 
-**Verification needed:** Test access using different user accounts and document identifiers.
+**Verification:** Automated tests cover unauthorized download denial and permission-based access. Additional tests should cover all document endpoints and deployed behavior.
 
 ### T2. Privilege Escalation
 
 **Threat:** A user changes a request to claim administrator or owner privileges.
 
-**Required mitigation:** Determine roles from trusted server-side records, not from client-supplied role values.
+**Existing control:** Account roles are stored server-side. New accounts receive the default `member` role, and role-management operations require authorization.
 
-**Verification needed:** Test attempts to change roles and call administrator-only endpoints without authorization.
+**Verification:** Automated security tests cover role escalation denial and administrative role changes. Live authentication and deployment configuration still require verification.
 
 ### T3. Permission Revocation Failure
 
 **Threat:** A user continues accessing a document after their permission has been revoked.
 
-**Required mitigation:** Check current permissions on each protected request so that revocation takes effect immediately.
+**Existing control:** Permission checks use current database records. Revoking a document permission removes the grant, so subsequent requests should be denied.
 
-**Verification needed:** Grant access, confirm it works, revoke access, and confirm the next request is denied.
+**Verification:** Automated tests cover permission revocation and denial of subsequent downloads.
 
 ### T4. Unsafe File Uploads
 
-**Threat:** Malicious files, oversized uploads, invalid file types, or path-traversal filenames may compromise the application or exhaust resources.
+**Threat:** Oversized files, unsafe filenames, malicious content, or resource exhaustion compromise the application.
 
-**Required mitigation:** Validate file size, permitted file types, filenames, and storage paths. Consider malware scanning before files are made available.
+**Existing controls:** Uploads are limited to 10 MiB, filenames are reduced to a basename, and files are stored under server-generated storage keys. Oversized uploads are rejected.
 
-**Status:** File upload validation and malware scanning remain pending.
+**Remaining risks:** Malware scanning, a formal file-type policy, and additional content validation are not verified as implemented. A size limit alone does not make an uploaded file safe.
 
 ### T5. Download Authorization Bypass
 
-**Threat:** A public file URL or predictable storage path allows someone to download a file without permission.
+**Threat:** A public URL or predictable storage path permits a download without authorization.
 
-**Required mitigation:** Keep documents in private storage and authorize every download request.
+**Existing controls:** Downloads use a document identifier and check current server-side permissions. The storage key is generated by the server, and the download response uses private, no-store cache headers.
 
-**Status:** Private document storage and download operations remain pending.
+**Remaining risks:** Production storage configuration and deployed access paths have not yet been verified. Do not expose the storage directory through a public static-file route.
 
 ### T6. Audit Log Tampering
 
-**Threat:** A user or application operation changes or deletes audit records to hide activity.
+**Threat:** An attacker or application operation modifies or deletes audit records to hide activity.
 
-**Required mitigation:** Restrict audit-log modifications and document the limits of the protection. Consider independent audit export or external immutable storage.
+**Existing controls:** Selected document, permission, role, and denied-action events are recorded. The PostgreSQL migration installs a trigger blocking ordinary `UPDATE` and `DELETE` operations on audit events. Tests cover audit immutability in the test database.
 
-**Status:** Audit-related controls and tests are present in the current security foundation; independent audit export and a full security review remain pending.
+**Remaining risks:** Database owners or superusers may bypass these protections. Independent audit export, cryptographic integrity protection, alerting, and external immutable storage are not verified as implemented.
 
 ### T7. Information Disclosure
 
-**Threat:** API responses reveal private document details, account information, or whether another user's document exists.
+**Threat:** API responses reveal private document contents, metadata, or the existence of another user's document.
 
-**Required mitigation:** Return only information the requester is authorized to see. Use consistent denial responses where revealing resource existence would be unsafe.
+**Existing controls:** Protected document operations apply server-side authorization. Unauthorized and unknown download identifiers receive the same `404` response.
 
-**Verification needed:** Test unauthorized requests and review error messages and API responses.
+**Remaining risks:** All endpoints and error messages need review for unintended information disclosure, including in production.
 
 ### T8. Denial of Service
 
-**Threat:** Repeated requests or oversized uploads consume server resources.
+**Threat:** Repeated requests or large uploads consume CPU, memory, storage, database connections, or network capacity.
 
-**Required mitigation:** Apply request limits, upload-size limits, timeouts, and rate limiting where appropriate.
+**Existing control:** File uploads have a 10 MiB application-level size limit and are processed in chunks.
 
-**Status:** Rate limiting and upload protections remain pending.
+**Remaining risks:** Rate limiting, quotas, request timeouts, storage monitoring, and operational alerting are not verified as implemented. Infrastructure-level request limits should also be configured.
 
 ### T9. Secret Exposure
 
 **Threat:** Database credentials, authentication secrets, or API keys are committed to source control or exposed in logs.
 
-**Required mitigation:** Store secrets in environment variables or a managed secret store. Exclude local secret files from Git and rotate any exposed credentials.
+**Existing controls:** Local `.env` files and private document-storage paths are excluded through Git ignore rules.
 
-**Verification needed:** Review tracked files and deployment configuration before publishing.
+**Verification required:** Review tracked files and production secret configuration before deployment. Ignore rules do not protect a secret that was already committed.
+
+### T10. Storage Loss or Unauthorized Filesystem Access
+
+**Threat:** Uploaded documents disappear after redeployment or become accessible through an unintended filesystem or static-file route.
+
+**Existing control:** Uploads use a private storage directory and server-generated storage keys in the current implementation.
+
+**Remaining risks:** Production storage persistence, backup and recovery, access permissions, and multi-instance behavior require verification. Ephemeral local disks may lose uploaded files during redeployment or instance replacement.
 
 ## 5. Existing Security Foundation
 
-The current project documentation and tests describe controls for:
+The current implementation and tests cover aspects of:
 
 - Clerk session verification on protected FastAPI routes.
 - Server-side account roles and document-scoped permission grants.
-- Authorization checks and permission revocation.
-- Audit records for selected protected actions and role or permission changes.
-- Tests for authentication, authorization, permission restrictions, and audit-related behavior.
+- Permission grants and revocation.
+- Private document upload with a 10 MiB size limit.
+- Authorized downloads and denial of unauthorized downloads.
+- Audit events for selected document and security operations.
+- Database protections against ordinary audit-event updates and deletions.
 
-These statements describe the current intended foundation and must not be interpreted as proof that every threat above has been eliminated. Review the implementation and test results before making stronger security claims.
+These controls reduce specific risks but do not eliminate all vulnerabilities. Test results apply to the local automated test environment and do not prove that every route, production setting, or external service is secure.
 
-## 6. Known Gaps
+## 6. Known Gaps and Remaining Work
 
-The following work remains necessary before TrustVault can be considered a complete document-sharing application:
-
-- Private file storage and validated uploads.
-- Authorized document downloads.
-- Malware scanning.
-- Document search and filtering.
-- Complete activity and audit views.
-- Rate limiting and operational monitoring.
-- Additional automated security tests.
-- Deployment verification and a full security review.
+- Malware scanning and a defined permitted-file-type policy.
+- Production storage durability, backups, recovery, and multi-instance behavior.
+- Document editing and complete search/filter functionality.
+- Complete activity and administrative views.
+- Rate limiting, quotas, monitoring, and alerting.
+- Independent audit export or externally protected audit storage.
+- Additional security tests and review of all protected routes.
+- Production database, authentication, and deployment verification.
+- Independent security review and testing of the deployed application.
 
 ## 7. Testing Plan
 
 - Verify that unauthenticated requests to protected endpoints are rejected.
 - Verify that users cannot grant themselves administrator privileges.
-- Verify that users cannot read or edit documents without the required permissions.
-- Verify that viewers cannot perform edit operations.
-- Verify that revoked permissions deny subsequent requests.
-- Verify that audit records are protected against ordinary updates and deletions.
-- Add upload, download, search, and audit-view tests when those features are implemented.
+- Verify that users cannot read or download documents without the required permissions.
+- Verify that viewers cannot perform unauthorized edit operations.
+- Grant a permission, confirm access, revoke it, and confirm subsequent requests are denied.
+- Verify that oversized uploads are rejected and incomplete files are cleaned up.
+- Verify that uploaded files are stored privately and cannot be accessed through public static paths.
+- Verify that upload and download outcomes are recorded in the audit trail.
+- Verify audit-event immutability using the supported database configuration.
+- Test the deployed application using non-sensitive test data before public submission.
 
 ## 8. Responsible Use
 
-Do not upload real confidential documents, personal information, or production credentials while the project is incomplete. Do not describe pending features as implemented. Update this threat model whenever new features, security controls, or test results change the project's status.
+Do not upload real confidential documents, personal information, or production credentials while deployment and storage controls remain unverified. Do not claim that a feature is secure solely because a test passes. Update this threat model when implementation, test results, deployment configuration, or known risks change.

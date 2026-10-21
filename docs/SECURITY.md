@@ -1,67 +1,65 @@
-# TrustVault security foundation
+# TrustVault Security Foundation
 
-This documents the current security implementation. It is not a penetration
-test, compliance assessment, or claim that the unfinished application is ready
-for sensitive documents.
+This document describes implemented security controls and known limitations. It is not a penetration test, compliance assessment, or claim that the application is production-ready for sensitive documents.
 
-## Authentication and account roles
+## Authentication and Account Roles
 
-- Clerk is the managed identity provider. FastAPI verifies session tokens with
-  Clerk's backend SDK and checks the token's authorized party against an
-  explicit allowlist or Replit-provided app domains.
-- The Express workspace API proxies Clerk's Frontend API in production. The
-  TrustVault FastAPI service independently verifies sessions on protected
-  routes.
-- Local TrustVault users are created from the verified Clerk `sub` claim.
-  New accounts receive the server-stored `member` role by default.
-- `admin` is a server-stored role. Client request bodies and Clerk public
-  metadata cannot set it. A trusted operator can bootstrap an administrator
-  with `TRUSTVAULT_ADMIN_CLERK_IDS`, a comma-separated list of Clerk user IDs.
-  Role changes are audited.
+- Clerk is the managed identity provider. FastAPI verifies session tokens using Clerk's backend SDK and checks authorized parties against configured values.
+- The TrustVault FastAPI service independently verifies sessions on protected routes.
+- Local TrustVault users are created from verified Clerk identities. New accounts receive the server-stored `member` role by default.
+- The `admin` role is stored server-side. Client request bodies and Clerk public metadata cannot directly assign it. Trusted operators can configure bootstrap administrators using `TRUSTVAULT_ADMIN_CLERK_IDS`.
+- Role changes and relevant security events are audited.
 
-## Document access
+## Document Access
 
-Roles are resolved from the current PostgreSQL rows for every request:
+Document access is checked on the server using current database records:
 
 - `admin`: can read documents and manage document permissions.
 - `owner`: can read their own documents and manage their permissions.
-- `editor`: a document-scoped `edit` grant; can read, with edit routes to be
-  implemented alongside document editing.
+- `editor`: a document-scoped `edit` grant; can read, but document editing routes are not yet implemented.
 - `viewer`: a document-scoped `read` grant; read-only.
 
-Unknown and unauthorized document IDs use the same `404` response. Permission
-revocation deletes the grant, so the next request is denied without relying on
-an authorization cache. No file download endpoint is implemented yet.
+The document API supports private file uploads and authorized downloads.
 
-## Audit trail
+- Uploads are limited to 10 MiB.
+- Files are stored using server-generated storage keys rather than user-supplied filesystem paths.
+- Download requests check current document permissions.
+- Unauthorized and unknown document downloads return `404` responses to reduce document-ID enumeration.
+- Permission revocation removes the grant, so subsequent download requests are denied.
+- Upload and download outcomes are recorded in the audit trail.
 
-Successful reads, permission changes, role changes, and denied protected
-actions are recorded in `trustvault_audit_events`. PostgreSQL blocks `UPDATE`
-and `DELETE` on this table with a trigger. This protects against ordinary
-application writes; a database owner or superuser can still alter the schema or
-data. Audit rows are not cryptographically signed or exported to an independent
-immutable log service.
+The current implementation still needs production storage and deployment verification. Local filesystem storage may not persist across redeployments or be shared across multiple server instances. Do not use real sensitive documents until production storage, backups, access controls, and deployment behavior have been verified.
 
-## Schema and migration
+## Audit Trail
 
-The initial schema is managed by Alembic in `backend/migrations/`. Apply it to
-the development database from `artifacts/trustvault/backend` with:
+Relevant document operations, permission changes, role changes, and denied protected actions are recorded in `trustvault_audit_events`.
+
+The PostgreSQL migration installs a trigger that blocks ordinary `UPDATE` and `DELETE` operations on audit events. This is not protection against a database owner or superuser changing the schema or data. The audit trail is not cryptographically signed or exported to an independently controlled immutable logging service.
+
+## Schema and Migration
+
+The database schema is managed by Alembic in `artifacts/trustvault/backend/migrations/`.
+
+From the backend directory, apply migrations to the intended development database with:
 
 ```bash
 python -m alembic upgrade head
 ```
 
-Do not run this against production by hand. Production schema rollout must be
-coordinated with the deployment process.
+Confirm the database connection before running migrations. Production migrations must be coordinated with deployment and backup procedures.
 
-## Verified test coverage
+## Verified Test Coverage
 
-The security tests cover missing sessions, least-privilege account creation,
-role escalation denial, admin role changes, document ID concealment,
-permission grants and immediate revocation, viewer restrictions, and audit
-immutability. Tests replace the Clerk identity dependency with controlled
-test identities; they do not claim to test a live Clerk login.
+The automated test suite currently passes **16 tests** in the local development environment.
 
-Private file storage, upload validation, download authorization, malware
-scanning, rate limits, operational monitoring, and a full security review are
-still outstanding.
+Coverage includes authentication-related security behavior, least-privilege account creation, role escalation denial, document permission management and revocation, audit immutability, private file upload, authorized download, denial of unauthorized downloads, and rejection of oversized uploads.
+
+Tests use controlled test identities and a test database. They do not establish that live Clerk authentication, production PostgreSQL, deployed storage, or the production deployment has been independently verified.
+
+## Known Limitations
+
+- Malware scanning is not implemented.
+- Document editing and complete document search are not verified as implemented.
+- Production storage durability, backups, and multi-instance behavior require verification.
+- Independent audit export, operational monitoring, rate limiting, and a full security review remain outstanding.
+- Deployment and live URL verification remain outstanding until tested against the actual deployed application.

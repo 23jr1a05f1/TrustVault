@@ -1,131 +1,151 @@
-﻿# TrustVault
+﻿# TrustVault — Secure Document Sharing
 
-TrustVault is a document-sharing security project for the Thesnovasys hiring challenge. It is being developed in small, verifiable stages.
+TrustVault is a document-sharing security project developed for the Snovasys hiring challenge. It focuses on server-side authorization, private document handling, permission management, and security audit records.
 
-**Current status:** The backend security foundation and automated tests are present, but the project is not yet a complete document-sharing application or a security-reviewed system.
+**Project status:** The backend security foundation and core document upload/download endpoints are implemented, with automated tests. Production deployment, durable storage verification, and independent security review remain outstanding.
 
-## Technology stack
+## Technology Stack
 
-- Frontend: React and TypeScript
-- Backend: Python and FastAPI
-- Database: PostgreSQL
-- Database migrations: Alembic
-- Authentication: Clerk
-- Testing: pytest
+- **Frontend:** React and TypeScript
+- **Backend:** Python and FastAPI
+- **Database:** PostgreSQL
+- **Database migrations:** Alembic
+- **Authentication:** Clerk
+- **ORM:** SQLAlchemy
+- **Testing:** pytest
 
-## Project structure
+## Features Implemented
 
-- `artifacts/trustvault/` — frontend and backend project files.
-- `artifacts/trustvault/backend/` — FastAPI application, database models, migrations and tests.
-- `docs/API.md` — API endpoint documentation.
-- `docs/SECURITY.md` — security controls and known limitations.
-- `THREATS.md` — threat analysis and outstanding risks.
-- `PROMPTS.md` — record of genuine development prompts.
+- Clerk-based session verification on protected backend routes.
+- Server-side account roles and document-scoped permissions.
+- Document permission grants and revocation.
+- Private document uploads with a 10 MiB application-level size limit.
+- Downloads authorized against current server-side permissions.
+- Denial of unauthorized document downloads.
+- Audit events for selected security and document operations.
+- Database protections against ordinary updates and deletions of audit events.
+- Automated tests for security controls and document operations.
+
+These features have automated test coverage, but this does not establish that the entire application is production-ready.
+
+## Project Structure
+
+- `artifacts/trustvault/` — application workspace.
+- `artifacts/trustvault/backend/` — FastAPI application, models, migrations, and tests.
+- `docs/API.md` — API documentation.
+- `docs/SECURITY.md` — implemented controls and security limitations.
+- `THREATS.md` — threat model and remaining risks.
+- `PROMPTS.md` — development prompt and verification record.
 
 ## Prerequisites
 
-Install the following before running the backend:
+For backend development, install:
 
-- Python compatible with the backend dependencies
-- PostgreSQL
-- Git
-- A Clerk application and its required configuration, if authentication is being tested
+- Python compatible with the backend project configuration.
+- `uv`, the Python project and dependency manager.
+- PostgreSQL for running the application against a database.
+- A Clerk application and the required authentication configuration.
+- Git.
 
-Use the project's dependency files to determine the required package versions.
+Frontend prerequisites and commands should follow the package configuration in the application workspace.
 
-## Local backend setup
+## Run the Backend Locally
 
-Open a terminal at the repository root and run:
+Open PowerShell at the repository root.
+
+Change to the backend directory:
 
 ```powershell
 cd artifacts/trustvault/backend
 ```
 
-Create and activate a virtual environment on Windows:
+Install and synchronize the backend dependencies using the project's lockfile:
 
 ```powershell
-python -m venv .venv
+uv sync
+```
+
+Activate the virtual environment in Windows PowerShell:
+
+```powershell
 .\.venv\Scripts\Activate.ps1
 ```
 
-Install dependencies using the dependency file provided by the backend. For example, if `requirements.txt` exists:
+Configure the required environment variables using the backend settings and a local `.env` file or environment configuration. Set up a development PostgreSQL database and the required Clerk settings before starting the API.
 
-```powershell
-python -m pip install -r requirements.txt
-```
+**Never commit `.env` files, API keys, database passwords, authentication secrets, or real private documents.**
 
-If the project uses a different dependency manager or file, follow that project's configuration instead.
-
-## Database configuration
-
-Create a local PostgreSQL database and configure the database connection using the environment variable expected by the backend. Configure Clerk credentials and other required settings according to the application configuration.
-
-Do not commit `.env` files, API keys, passwords, session secrets or other credentials to GitHub. Use environment variables or the hosting provider's secret manager.
-
-Before running migrations, confirm that the database connection points to your intended development database.
-
-Apply migrations:
+Apply database migrations to the intended development database:
 
 ```powershell
 python -m alembic upgrade head
 ```
 
-## Run the API
-
-From `artifacts/trustvault/backend`, run:
+Start the API:
 
 ```powershell
 python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-When the server starts successfully, open:
+When startup succeeds, the API is available at:
 
 - API base URL: `http://127.0.0.1:8000`
-- Interactive API documentation, if enabled: `http://127.0.0.1:8000/docs`
+- Interactive API documentation: `http://127.0.0.1:8000/docs`, if enabled.
 
-The API documentation page is not proof that every feature is implemented or secure.
+A running API or accessible documentation page does not prove that all application features work correctly.
 
-## Run automated tests
+## Run Automated Tests
 
-From the backend directory:
+From `artifacts/trustvault/backend`, activate the project's virtual environment if needed, then run:
 
 ```powershell
 python -m pytest -q
 ```
 
-Review the test output and investigate any failures. Record the actual result; do not report a test as passing unless it passes in your environment.
+The most recent test run before this documentation update reported:
 
-## Implemented foundation and limitations
+```text
+16 passed in 0.65s
+```
 
-The current project documentation describes authentication, role and permission checks, and audit-related controls in the backend security foundation.
+Rerun the tests after code changes and record the actual result. The test suite uses controlled test identities and a test database; passing tests do not verify live Clerk authentication or production infrastructure.
 
-The following features are documented as incomplete and must not be treated as production-ready:
+## Security and Limitations
 
-- Private document file storage
-- Validated file uploads and authorized downloads
-- Malware scanning
-- Document search
-- Complete activity and administration views
-- Full deployment verification and independent security review
+Important remaining work includes:
 
-Verify each feature against the actual code and tests before describing it as implemented.
+- Malware scanning and a defined permitted-file-type policy.
+- Verification of persistent production file storage, backups, and recovery.
+- Rate limiting, quotas, operational monitoring, and alerting.
+- Complete document search, editing, and administrative activity views.
+- Independent audit export and a full security review.
+- Verification of production authentication, database configuration, and deployment.
 
-## API documentation
+The local filesystem storage used by the current implementation may not persist across redeployments or be shared between server instances. Production storage must be evaluated and configured before relying on the service for important documents.
 
-See `docs/API.md` for the documented routes and their authorization requirements. Check the code whenever documentation and implementation differ.
-
-## Security
-
-Read `THREATS.md` and `docs/SECURITY.md` before testing the application. Use test data only. Do not upload real private documents or production credentials to an unfinished system.
+Read `docs/SECURITY.md` and `THREATS.md` before testing or deploying the application. Use non-sensitive test data until production security and storage have been verified.
 
 ## Deployment
 
-A working local API does not establish that the application is deployed. Before submission, configure the production database and secrets, deploy the frontend and backend, run migrations, and test the live URL. Document the actual hosting provider, configuration steps, and verified URL once deployment succeeds.
+**Deployment status:** Not verified.
 
-## Development records
+Before submitting a live application:
 
-`PROMPTS.md` must contain genuine prompts and actual development outcomes. Do not fabricate prompt history, test results, commits, or deployment status.
+1. Choose a host that supports the backend, database, and required storage behavior.
+2. Configure production environment variables and authentication settings securely.
+3. Provision the production database and apply migrations through the deployment process.
+4. Configure durable private document storage.
+5. Deploy the frontend and backend with the correct API configuration.
+6. Test the deployed site in a private browser window.
+7. Verify authentication, document uploads, authorized downloads, permission revocation, and error handling using non-sensitive test accounts.
+8. Record the actual deployment provider and verified live URL.
 
-## Project status
+Do not report a live deployment as successful until the URL has been tested from a separate browser session.
 
-TrustVault is an evolving challenge project. Remaining work and known limitations should be reported honestly in the final submission.
+## Development Records
+
+`PROMPTS.md` records genuine AI-assisted development work and its actual verification results. Keep it updated as significant tasks are completed. Do not invent prompts, test outcomes, commit history, or deployment status.
+
+## License and Challenge Submission
+
+Add a license only if one has been selected for the project. Before submission, verify that the GitHub repository is accessible to judges, the required links work, and the project description accurately reflects the implemented features and outstanding limitations.
