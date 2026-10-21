@@ -85,3 +85,23 @@ def test_other_user_cannot_download_private_document(
         and event.outcome == "denied"
         for event in events
     )
+
+
+def test_oversized_upload_is_rejected(
+    test_env, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(document_routes, "STORAGE_DIR", tmp_path)
+    monkeypatch.setattr(document_routes, "MAX_FILE_SIZE", 4)
+
+    test_env.add_user("size-limit-owner")
+    test_env.sign_in_as("size-limit-owner")
+
+    response = test_env.client.upload(
+        "/api/documents",
+        filename="too-large.txt",
+        content=b"12345",
+        content_type="text/plain",
+    )
+
+    assert response.status_code == 413
+    assert not list(tmp_path.iterdir())
