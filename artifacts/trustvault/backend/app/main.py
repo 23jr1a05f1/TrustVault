@@ -21,6 +21,7 @@ app.include_router(documents_router)
 
 
 @app.get("/healthz", tags=["health"])
+@app.get("/api/healthz", tags=["health"])
 def health_check() -> dict[str, str]:
     """Report that the API process is responding."""
     return {"status": "ok"}
