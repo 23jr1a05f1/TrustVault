@@ -1,3 +1,4 @@
+
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID, uuid4
@@ -33,6 +34,26 @@ class TestApiClient:
 
         return anyio.run(send_request, backend="asyncio")
 
+    def upload(
+        self,
+        path: str,
+        filename: str,
+        content: bytes,
+        content_type: str = "application/octet-stream",
+    ) -> httpx.Response:
+        async def send_request() -> httpx.Response:
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app),
+                base_url="https://trustvault.test",
+            ) as client:
+                return await client.post(
+                    path,
+                    files={"file": (filename, content, content_type)},
+                    data={"category": "test"},
+                )
+
+        return anyio.run(send_request, backend="asyncio")
+
 
 @dataclass
 class SecurityTestEnvironment:
@@ -50,7 +71,11 @@ class SecurityTestEnvironment:
             db.commit()
             return user.id
 
-    def add_document(self, owner_id: UUID, name: str = "Tax return.pdf") -> UUID:
+    def add_document(
+        self,
+        owner_id: UUID,
+        name: str = "Tax return.pdf",
+    ) -> UUID:
         with self.session_factory() as db:
             document = Document(
                 owner_id=owner_id,
@@ -86,7 +111,10 @@ class SecurityTestEnvironment:
         with self.session_factory() as db:
             return list(
                 db.scalars(
-                    select(AuditEvent).order_by(AuditEvent.created_at, AuditEvent.id)
+                    select(AuditEvent).order_by(
+                        AuditEvent.created_at,
+                        AuditEvent.id,
+                    )
                 )
             )
 
@@ -104,12 +132,16 @@ def test_env() -> SecurityTestEnvironment:
     )
 
     @event.listens_for(engine, "connect")
-    def enable_sqlite_foreign_keys(dbapi_connection: Any, _connection_record: Any) -> None:
+    def enable_sqlite_foreign_keys(
+        dbapi_connection: Any,
+        _connection_record: Any,
+    ) -> None:
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
 
     Base.metadata.create_all(engine)
+
     with engine.begin() as connection:
         connection.exec_driver_sql(
             """
@@ -135,7 +167,9 @@ def test_env() -> SecurityTestEnvironment:
         expire_on_commit=False,
         autoflush=False,
     )
+
     auth_context = {"clerk_id": "user-test-default"}
+
     test_settings = Settings(
         clerk_secret_key=SecretStr("sk_test_not_used"),
         clerk_authorized_parties="https://trustvault.test",
@@ -148,8 +182,8 @@ def test_env() -> SecurityTestEnvironment:
 
     app.dependency_overrides[get_db] = override_db
     app.dependency_overrides[get_settings] = lambda: test_settings
-    app.dependency_overrides[require_clerk_identity] = lambda: AuthenticatedIdentity(
-        clerk_id=auth_context["clerk_id"]
+    app.dependency_overrides[require_clerk_identity] = lambda: (
+        AuthenticatedIdentity(clerk_id=auth_context["clerk_id"])
     )
 
     try:

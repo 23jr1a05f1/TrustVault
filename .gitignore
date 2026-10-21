@@ -1,23 +1,24 @@
+
 # See https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files for more about ignoring files.
 
-# compiled output
-dist
-tmp
-out-tsc
+# Compiled output
+dist/
+tmp/
+out-tsc/
 *.tsbuildinfo
-.expo
-.expo-shared
+.expo/
+.expo-shared/
 __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
 .pythonlibs/
 
-# dependencies
-node_modules
+# Dependencies
+node_modules/
 
 # IDEs and editors
-/.idea
+/.idea/
 .project
 .classpath
 .c9/
@@ -25,27 +26,28 @@ node_modules
 .settings/
 *.sublime-workspace
 
-# IDE - VSCode
+# VS Code
 .vscode/*
 !.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
 
-# misc
-/.sass-cache
+# Miscellaneous
+/.sass-cache/
 /connect.lock
-/coverage
+/coverage/
 /libpeerconnection.log
 npm-debug.log
 yarn-error.log
 testem.log
-/typings
+/typings/
 
-# System Files
+# System files
 .DS_Store
 Thumbs.db
 
+# Cursor and GitHub instructions
 .cursor/rules/nx-rules.mdc
 .github/instructions/nx.instructions.md
 
@@ -62,6 +64,10 @@ Thumbs.db
 # Private Replit conversation attachments
 .conversation/attached_assets/
 
-# Python virtual environments and secrets
+# Python virtual environments
 venv/
 ENV/
+
+# TrustVault private document uploads
+private_storage/
+artifacts/trustvault/backend/private_storage/
