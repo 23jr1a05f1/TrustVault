@@ -1,7 +1,7 @@
-
-"""Private document upload, download, and version-history endpoints."""
+"""Private document upload, download, restore, and version-history endpoints."""
 
 import os
+import shutil
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -208,10 +208,7 @@ async def upload_document_version(
         )
         db.commit()
         await file.close()
-        raise HTTPException(
-            status_code=404,
-            detail="Document not found",
-        )
+        raise HTTPException(status_code=404, detail="Document not found")
 
     storage_key: str | None = None
 
@@ -236,7 +233,6 @@ async def upload_document_version(
         )
         db.add(version)
 
-        # Point the document at the latest file while preserving older versions.
         document.storage_key = storage_key
         document.content_type = content_type
         document.size_bytes = size
@@ -247,13 +243,11 @@ async def upload_document_version(
             "document.version.uploaded",
             "success",
             str(document.id),
-            {
-                "version_number": next_version,
-                "size_bytes": size,
-            },
+            {"version_number": next_version, "size_bytes": size},
         )
 
         db.commit()
+        db.refresh(version)
 
         return {
             "document_id": str(document.id),
@@ -290,10 +284,7 @@ def list_document_versions(
             str(document_id),
         )
         db.commit()
-        raise HTTPException(
-            status_code=404,
-            detail="Document not found",
-        )
+        raise HTTPException(status_code=404, detail="Document not found")
 
     versions = db.scalars(
         select(DocumentVersion)
@@ -336,6 +327,137 @@ def list_document_versions(
     db.commit()
 
     return result
+
+
+@router.post("/{document_id}/versions/{version_number}/restore")
+def restore_document_version(
+    document_id: UUID,
+    version_number: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Restore an old version as a new version. Only Owners and Admins may restore."""
+    document, role = _get_document_role(db, user, document_id)
+
+    if role not in ("admin", "owner"):
+        _audit(
+            db,
+            user,
+            "document.version.restore.denied",
+            "denied",
+            str(document_id),
+            {"version_number": version_number},
+        )
+        db.commit()
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if version_number < 1:
+        _audit(
+            db,
+            user,
+            "document.version.restore.denied",
+            "denied",
+            str(document_id),
+            {"version_number": version_number},
+        )
+        db.commit()
+        raise HTTPException(status_code=404, detail="Document version not found")
+
+    source_version = db.scalar(
+        select(DocumentVersion).where(
+            DocumentVersion.document_id == document.id,
+            DocumentVersion.version_number == version_number,
+        )
+    )
+
+    if source_version is None:
+        _audit(
+            db,
+            user,
+            "document.version.restore.denied",
+            "denied",
+            str(document_id),
+            {"version_number": version_number},
+        )
+        db.commit()
+        raise HTTPException(status_code=404, detail="Document version not found")
+
+    source_path = _safe_file_path(source_version.storage_key)
+
+    if source_path is None:
+        _audit(
+            db,
+            user,
+            "document.version.restore.denied",
+            "denied",
+            str(document_id),
+            {
+                "version_number": version_number,
+                "reason": "source_file_missing",
+            },
+        )
+        db.commit()
+        raise HTTPException(
+            status_code=404,
+            detail="Document version file not found",
+        )
+
+    current_max = db.scalar(
+        select(func.max(DocumentVersion.version_number)).where(
+            DocumentVersion.document_id == document.id
+        )
+    )
+    next_version = (current_max or 0) + 1
+
+    new_storage_key = uuid4().hex
+    STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+    destination = STORAGE_DIR / new_storage_key
+
+    try:
+        shutil.copyfile(source_path, destination)
+
+        restored_version = DocumentVersion(
+            document_id=document.id,
+            version_number=next_version,
+            storage_key=new_storage_key,
+            content_type=source_version.content_type,
+            size_bytes=source_version.size_bytes,
+            uploaded_by_id=user.id,
+        )
+        db.add(restored_version)
+
+        document.storage_key = new_storage_key
+        document.content_type = source_version.content_type
+        document.size_bytes = source_version.size_bytes
+
+        _audit(
+            db,
+            user,
+            "document.version.restored",
+            "success",
+            str(document.id),
+            {
+                "restored_from_version": version_number,
+                "new_version_number": next_version,
+                "size_bytes": source_version.size_bytes,
+            },
+        )
+
+        db.commit()
+        db.refresh(restored_version)
+
+        return {
+            "document_id": str(document.id),
+            "restored_from_version": version_number,
+            "version_number": restored_version.version_number,
+            "size_bytes": restored_version.size_bytes,
+            "created_at": restored_version.created_at,
+        }
+
+    except Exception:
+        db.rollback()
+        destination.unlink(missing_ok=True)
+        raise
 
 
 @router.get("/{document_id}/versions/{version_number}/download")
@@ -391,7 +513,10 @@ def download_document_version(
             {"version_number": version_number},
         )
         db.commit()
-        raise HTTPException(status_code=404, detail="Document version file not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Document version file not found",
+        )
 
     _audit(
         db,

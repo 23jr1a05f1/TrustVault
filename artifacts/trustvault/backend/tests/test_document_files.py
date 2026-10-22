@@ -1,4 +1,3 @@
-
 from types import SimpleNamespace
 
 from app.routes import documents as document_routes
@@ -296,3 +295,147 @@ def test_viewer_cannot_access_version_history_or_old_versions(
     )
 
     assert old_response.status_code == 404
+
+
+def test_owner_can_restore_old_version_without_deleting_history(
+    test_env, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(document_routes, "STORAGE_DIR", tmp_path)
+
+    test_env.add_user("restore-owner")
+    test_env.sign_in_as("restore-owner")
+
+    first_content = b"Original version one"
+    upload_response = test_env.client.upload(
+        "/api/documents",
+        filename="restore-test.txt",
+        content=first_content,
+        content_type="text/plain",
+    )
+
+    assert upload_response.status_code == 201, upload_response.text
+    document_id = upload_response.json()["id"]
+
+    second_content = b"Updated version two"
+    version_response = test_env.client.upload(
+        f"/api/documents/{document_id}/versions",
+        filename="restore-test.txt",
+        content=second_content,
+        content_type="text/plain",
+    )
+
+    assert version_response.status_code == 201, version_response.text
+    assert version_response.json()["version_number"] == 2
+
+    restore_response = test_env.client.request(
+        "POST",
+        f"/api/documents/{document_id}/versions/1/restore",
+    )
+
+    # The restore endpoint currently returns HTTP 200.
+    assert restore_response.status_code == 200, restore_response.text
+
+    restored = restore_response.json()
+    assert restored["restored_from_version"] == 1
+    assert restored["version_number"] == 3
+    assert restored["size_bytes"] == len(first_content)
+
+    latest_response = test_env.client.request(
+        "GET",
+        f"/api/documents/{document_id}/download",
+    )
+
+    assert latest_response.status_code == 200, latest_response.text
+    assert latest_response.content == first_content
+
+    history_response = test_env.client.request(
+        "GET",
+        f"/api/documents/{document_id}/versions",
+    )
+
+    assert history_response.status_code == 200, history_response.text
+    history = history_response.json()
+
+    assert [item["version_number"] for item in history] == [3, 2, 1]
+
+    version_two_response = test_env.client.request(
+        "GET",
+        f"/api/documents/{document_id}/versions/2/download",
+    )
+
+    assert version_two_response.status_code == 200
+    assert version_two_response.content == second_content
+
+    version_one_response = test_env.client.request(
+        "GET",
+        f"/api/documents/{document_id}/versions/1/download",
+    )
+
+    assert version_one_response.status_code == 200
+    assert version_one_response.content == first_content
+
+
+def test_editor_cannot_restore_old_version(
+    test_env, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(document_routes, "STORAGE_DIR", tmp_path)
+
+    test_env.add_user("restore-editor")
+    test_env.add_user("restore-editor-owner")
+
+    monkeypatch.setattr(
+        security_routes,
+        "_find_verified_clerk_user",
+        lambda _settings, _email: SimpleNamespace(
+            id="restore-editor"
+        ),
+    )
+
+    test_env.sign_in_as("restore-editor-owner")
+
+    upload_response = test_env.client.upload(
+        "/api/documents",
+        filename="editor-restore-test.txt",
+        content=b"Original version",
+        content_type="text/plain",
+    )
+
+    assert upload_response.status_code == 201, upload_response.text
+    document_id = upload_response.json()["id"]
+
+    version_response = test_env.client.upload(
+        f"/api/documents/{document_id}/versions",
+        filename="editor-restore-test.txt",
+        content=b"Updated version",
+        content_type="text/plain",
+    )
+
+    assert version_response.status_code == 201, version_response.text
+
+    grant_response = test_env.client.request(
+        "POST",
+        f"/api/documents/{document_id}/permissions",
+        body={
+            "email": "editor@example.com",
+            "access_level": "edit",
+        },
+    )
+
+    assert grant_response.status_code in (200, 201), grant_response.text
+
+    test_env.sign_in_as("restore-editor")
+
+    restore_response = test_env.client.request(
+        "POST",
+        f"/api/documents/{document_id}/versions/1/restore",
+    )
+
+    assert restore_response.status_code == 404
+
+    latest_response = test_env.client.request(
+        "GET",
+        f"/api/documents/{document_id}/download",
+    )
+
+    assert latest_response.status_code == 200, latest_response.text
+    assert latest_response.content == b"Updated version"
