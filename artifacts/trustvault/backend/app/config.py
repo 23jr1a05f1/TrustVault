@@ -1,3 +1,4 @@
+
 """Environment-backed settings for the TrustVault API."""
 
 import os
@@ -59,23 +60,28 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
+    """Load and cache application settings, including values from .env."""
     return Settings()
 
 
 def sqlalchemy_database_url(settings: Settings | None = None) -> str:
-    """Normalize Replit's PostgreSQL URL for SQLAlchemy's psycopg driver."""
-    if settings is not None:
-        value = settings.database_url.get_secret_value()
-    else:
-        value = os.environ.get("DATABASE_URL", "")
+    """Normalize the configured PostgreSQL URL for SQLAlchemy's psycopg driver."""
+    if settings is None:
+        settings = get_settings()
+
+    value = settings.database_url.get_secret_value()
+
     if not value:
         raise RuntimeError("DATABASE_URL must be configured")
+
     if value.startswith("postgres://"):
         value = "postgresql://" + value.removeprefix("postgres://")
+
     if value.startswith("postgresql://"):
         value = value.replace(
             "postgresql://",
             "postgresql+psycopg://",
             1,
         )
+
     return value

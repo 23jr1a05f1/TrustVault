@@ -1,3 +1,4 @@
+
 [project]
 name = "trustvault-api"
 version = "0.1.0"
@@ -6,6 +7,7 @@ requires-python = ">=3.11"
 dependencies = [
   "alembic>=1.13",
   "clerk-backend-api>=1",
+  "email-validator>=2.2",
   "fastapi>=0.115,<1",
   "pydantic-settings>=2",
   "psycopg[binary]>=3.2",
@@ -23,4 +25,3 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-

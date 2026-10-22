@@ -4,8 +4,9 @@
 from typing import Annotated, Literal
 from uuid import UUID
 
+from clerk_backend_api import Clerk
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -16,6 +17,7 @@ from app.authorization import (
     load_document,
     record_audit,
 )
+from app.config import Settings, get_settings
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.models import Document, DocumentPermission, User
@@ -24,6 +26,7 @@ router = APIRouter(prefix="/api", tags=["security"])
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
 Database = Annotated[Session, Depends(get_db)]
+AppSettings = Annotated[Settings, Depends(get_settings)]
 
 
 class CurrentUserResponse(BaseModel):
@@ -42,12 +45,26 @@ class DocumentResponse(BaseModel):
 
 
 class PermissionGrantInput(BaseModel):
-    user_id: UUID
+    email: EmailStr
     access_level: Literal["read", "edit"]
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: EmailStr) -> str:
+        return str(value).strip().lower()
 
 
 class PermissionGrantResponse(BaseModel):
     user_id: UUID
+    email: str | None = None
+    access_level: Literal["read", "edit"]
+
+
+class DocumentPermissionEntry(BaseModel):
+    """One recipient who currently has document-scoped access."""
+
+    user_id: UUID
+    email: str | None = None
     access_level: Literal["read", "edit"]
 
 
@@ -104,15 +121,52 @@ def _managed_document(
             document_id=document_id,
             action=action,
         )
-
-        # Return the same response for missing and unauthorized documents.
-        # This prevents users from discovering documents through their IDs.
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Document not found",
         )
 
     return document, role
+
+
+def _find_verified_clerk_user(
+    settings: Settings,
+    email: str,
+):
+    """Find a Clerk user with this verified primary email."""
+    try:
+        with Clerk(
+            bearer_auth=settings.clerk_secret_key.get_secret_value()
+        ) as clerk:
+            clerk_users = clerk.users.list(
+                request={
+                    "email_address": [email],
+                    "limit": 10,
+                }
+            )
+    except Exception as exc:
+        # Avoid exposing Clerk errors or credentials to the API caller.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unable to verify the recipient with Clerk. Please try again.",
+        ) from exc
+
+    for clerk_user in clerk_users:
+        primary_email_id = clerk_user.primary_email_address_id
+
+        for address in clerk_user.email_addresses or []:
+            verification = address.verification
+            raw_status = getattr(verification, "status", None)
+            verification_status = getattr(raw_status, "value", raw_status)
+
+            if (
+                address.id == primary_email_id
+                and address.email_address.strip().lower() == email
+                and str(verification_status).lower() == "verified"
+            ):
+                return clerk_user
+
+    return None
 
 
 @router.get("/me", response_model=CurrentUserResponse)
@@ -127,7 +181,6 @@ def list_documents(
     db: Database,
 ) -> list[DocumentResponse]:
     """List only documents the current user is allowed to read."""
-
     documents = db.scalars(
         select(Document).order_by(Document.created_at.desc())
     ).all()
@@ -150,7 +203,6 @@ def list_documents(
             )
         )
 
-    # FIX: record_audit requires resource_id.
     record_audit(
         db,
         actor=user,
@@ -160,22 +212,17 @@ def list_documents(
         resource_id="/api/documents",
         details={"returned_count": len(visible_documents)},
     )
-
     db.commit()
     return visible_documents
 
 
-@router.get(
-    "/documents/{document_id}",
-    response_model=DocumentResponse,
-)
+@router.get("/documents/{document_id}", response_model=DocumentResponse)
 def read_document_metadata(
     document_id: UUID,
     user: CurrentUser,
     db: Database,
 ) -> DocumentResponse:
     """Return document metadata only when the user has read access."""
-
     document, role = _managed_document(
         db,
         user,
@@ -191,7 +238,6 @@ def read_document_metadata(
         resource_type="document",
         resource_id=str(document.id),
     )
-
     db.commit()
 
     return DocumentResponse(
@@ -201,6 +247,52 @@ def read_document_metadata(
         owner_id=document.owner_id,
         role=role,  # type: ignore[arg-type]
     )
+
+
+@router.get(
+    "/documents/{document_id}/permissions",
+    response_model=list[DocumentPermissionEntry],
+)
+def list_document_permissions(
+    document_id: UUID,
+    user: CurrentUser,
+    db: Database,
+) -> list[DocumentPermissionEntry]:
+    """List current recipients for a document. Owner or admin only."""
+    document, _ = _managed_document(
+        db,
+        user,
+        document_id,
+        action="manage_permissions",
+    )
+
+    rows = db.execute(
+        select(DocumentPermission, User)
+        .join(User, DocumentPermission.user_id == User.id)
+        .where(DocumentPermission.document_id == document.id)
+        .order_by(DocumentPermission.created_at.asc(), DocumentPermission.id.asc())
+    ).all()
+
+    entries = [
+        DocumentPermissionEntry(
+            user_id=permission.user_id,
+            email=recipient.email,
+            access_level=permission.access_level,  # type: ignore[arg-type]
+        )
+        for permission, recipient in rows
+    ]
+
+    record_audit(
+        db,
+        actor=user,
+        event_type="permission.list",
+        outcome="success",
+        resource_type="document",
+        resource_id=str(document.id),
+        details={"returned_count": len(entries)},
+    )
+    db.commit()
+    return entries
 
 
 @router.post(
@@ -213,9 +305,9 @@ def grant_document_permission(
     body: PermissionGrantInput,
     user: CurrentUser,
     db: Database,
+    settings: AppSettings,
 ) -> PermissionGrantResponse:
-    """Grant read or edit permission to another existing user."""
-
+    """Grant access to an existing TrustVault account by verified email."""
     document, _ = _managed_document(
         db,
         user,
@@ -223,7 +315,25 @@ def grant_document_permission(
         action="manage_permissions",
     )
 
-    target = db.get(User, body.user_id)
+    email = str(body.email).strip().lower()
+    clerk_user = _find_verified_clerk_user(settings, email)
+
+    if clerk_user is None:
+        _deny_document_action(
+            db,
+            user,
+            event_type="permission.grant.denied",
+            document_id=document_id,
+            action="recipient_email_not_verified",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No verified Clerk account was found for that email.",
+        )
+
+    target = db.scalar(
+        select(User).where(User.clerk_id == clerk_user.id)
+    )
 
     if target is None:
         _deny_document_action(
@@ -231,13 +341,26 @@ def grant_document_permission(
             user,
             event_type="permission.grant.denied",
             document_id=document_id,
-            action="grant_to_unknown_user",
+            action="recipient_not_registered_in_trustvault",
         )
-
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
+            detail=(
+                "This person hasn't signed in to TrustVault yet. "
+                "Ask them to sign in first, then try again."
+            ),
         )
+
+    if target.id == user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You already have access to your own document.",
+        )
+
+    # Persist the verified recipient email so owners can recognize grants later.
+    # Never store Clerk secrets or session tokens on the user row.
+    if target.email != email:
+        target.email = email
 
     grant = db.scalar(
         select(DocumentPermission).where(
@@ -270,11 +393,11 @@ def grant_document_permission(
             "access_level": body.access_level,
         },
     )
-
     db.commit()
 
     return PermissionGrantResponse(
         user_id=target.id,
+        email=target.email,
         access_level=body.access_level,
     )
 
@@ -290,7 +413,6 @@ def revoke_document_permission(
     db: Database,
 ) -> Response:
     """Revoke an existing document permission."""
-
     document, _ = _managed_document(
         db,
         user,
@@ -313,14 +435,12 @@ def revoke_document_permission(
             document_id=document_id,
             action="revoke_missing_permission",
         )
-
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Permission not found",
         )
 
     db.delete(grant)
-
     record_audit(
         db,
         actor=user,
@@ -330,7 +450,6 @@ def revoke_document_permission(
         resource_id=str(document.id),
         details={"target_user_id": str(target_user_id)},
     )
-
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -346,7 +465,6 @@ def change_account_role(
     db: Database,
 ) -> User:
     """Allow only administrators to change account roles."""
-
     if user.role != "admin":
         record_audit(
             db,
@@ -357,9 +475,7 @@ def change_account_role(
             resource_id=str(target_user_id),
             details={"requested_role": body.role},
         )
-
         db.commit()
-
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Administrator role required",
@@ -377,9 +493,7 @@ def change_account_role(
             resource_id=str(target_user_id),
             details={"reason": "unknown_user"},
         )
-
         db.commit()
-
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
@@ -400,6 +514,5 @@ def change_account_role(
             "role": body.role,
         },
     )
-
     db.commit()
     return target

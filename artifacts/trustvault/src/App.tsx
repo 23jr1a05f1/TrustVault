@@ -1,9 +1,19 @@
 import { type ReactNode } from 'react';
+import {
+  ClerkProvider,
+  Show,
+  ClerkLoaded,
+  ClerkLoading,
+} from '@clerk/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from '@/components/error-boundary';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import DashboardPage from '@/pages/dashboard';
 import NotFound from '@/pages/not-found';
+import SignInPage from '@/pages/sign-in';
 import {
   Route,
   Switch,
@@ -11,33 +21,50 @@ import {
   Router as WouterRouter,
 } from 'wouter';
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      staleTime: 15_000,
+    },
+  },
+});
 
-function Home() {
-  return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-gray-50">
-      <div className="text-center">
-        <h1 className="text-2xl font-bold text-gray-900">
-          Replit Agent is building...
-        </h1>
-        <p className="mt-2 text-sm text-gray-600">
-          Your app will appear here once it's ready.
-        </p>
-      </div>
-    </div>
-  );
-}
+const clerkPublishableKey =
+  import.meta.env.VITE_CLERK_PUBLISHABLE_KEY?.trim() ?? '';
 
 function Router() {
   return (
-    // Keep a shared shell (sidebar, navbar) outside the boundary so it
-    // survives a page crash.
     <RoutedErrorBoundary>
       <Switch>
-        <Route path="/" component={Home} />
+        <Route path="/" component={HomeGate} />
         <Route component={NotFound} />
       </Switch>
     </RoutedErrorBoundary>
+  );
+}
+
+function HomeGate() {
+  return (
+    <>
+      <ClerkLoading>
+        <div className="flex min-h-screen items-center justify-center bg-background px-4">
+          <div className="w-full max-w-sm space-y-3">
+            <Skeleton className="h-10 w-40" />
+            <Skeleton className="h-24 w-full" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+        </div>
+      </ClerkLoading>
+      <ClerkLoaded>
+        <Show when="signed-out" fallback={null}>
+          <SignInPage />
+        </Show>
+        <Show when="signed-in" fallback={null}>
+          <DashboardPage />
+        </Show>
+      </ClerkLoaded>
+    </>
   );
 }
 
@@ -46,12 +73,32 @@ function RoutedErrorBoundary({ children }: { children: ReactNode }) {
   return <ErrorBoundary resetKey={location}>{children}</ErrorBoundary>;
 }
 
+function MissingClerkConfig() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background px-4">
+      <Alert variant="destructive" className="max-w-lg">
+        <AlertTitle>Clerk is not configured</AlertTitle>
+        <AlertDescription>
+          Set <code>VITE_CLERK_PUBLISHABLE_KEY</code> for the TrustVault frontend
+          before signing in. The dashboard will not invent a fake session.
+        </AlertDescription>
+      </Alert>
+    </div>
+  );
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
-          <Router />
+          {clerkPublishableKey ? (
+            <ClerkProvider publishableKey={clerkPublishableKey}>
+              <Router />
+            </ClerkProvider>
+          ) : (
+            <MissingClerkConfig />
+          )}
         </WouterRouter>
         <Toaster />
       </TooltipProvider>

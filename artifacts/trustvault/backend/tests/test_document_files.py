@@ -1,5 +1,8 @@
 
+from types import SimpleNamespace
+
 from app.routes import documents as document_routes
+from app.routes import security as security_routes
 
 
 def test_owner_can_upload_and_download_document(
@@ -112,8 +115,17 @@ def test_user_cannot_download_after_permission_is_revoked(
 ):
     monkeypatch.setattr(document_routes, "STORAGE_DIR", tmp_path)
 
-    owner_id = test_env.add_user("revocation-owner")
+    test_env.add_user("revocation-owner")
     viewer_id = test_env.add_user("revocation-viewer")
+
+    # Simulate Clerk finding the viewer's verified email.
+    monkeypatch.setattr(
+        security_routes,
+        "_find_verified_clerk_user",
+        lambda _settings, _email: SimpleNamespace(
+            id="revocation-viewer"
+        ),
+    )
 
     # Owner uploads a document.
     test_env.sign_in_as("revocation-owner")
@@ -128,12 +140,12 @@ def test_user_cannot_download_after_permission_is_revoked(
     assert upload_response.status_code == 201, upload_response.text
     document_id = upload_response.json()["id"]
 
-    # Owner grants the viewer read permission.
+    # Owner grants the viewer read permission using their email.
     grant_response = test_env.client.request(
         "POST",
         f"/api/documents/{document_id}/permissions",
         body={
-            "user_id": str(viewer_id),
+            "email": "viewer@example.com",
             "access_level": "read",
         },
     )

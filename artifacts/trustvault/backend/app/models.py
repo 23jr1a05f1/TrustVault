@@ -31,8 +31,17 @@ class User(Base):
         UniqueConstraint("clerk_id", name="uq_trustvault_users_clerk_id"),
     )
 
-    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
     clerk_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    email: Mapped[str | None] = mapped_column(
+        String(320),
+        nullable=True,
+        index=True,
+    )
     role: Mapped[str] = mapped_column(
         String(16),
         nullable=False,
@@ -58,7 +67,11 @@ class Document(Base):
         UniqueConstraint("storage_key", name="uq_trustvault_documents_storage_key"),
     )
 
-    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
     owner_id: Mapped[UUID] = mapped_column(
         Uuid(as_uuid=True),
         ForeignKey("trustvault_users.id", ondelete="RESTRICT"),
@@ -107,7 +120,11 @@ class DocumentPermission(Base):
         ),
     )
 
-    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
     document_id: Mapped[UUID] = mapped_column(
         Uuid(as_uuid=True),
         ForeignKey("trustvault_documents.id", ondelete="CASCADE"),
@@ -144,20 +161,32 @@ class AuditEvent(Base):
         ),
     )
 
-    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
     actor_id: Mapped[UUID | None] = mapped_column(
         Uuid(as_uuid=True),
         ForeignKey("trustvault_users.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
-    event_type: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        index=True,
+    )
     outcome: Mapped[str] = mapped_column(String(16), nullable=False)
     resource_type: Mapped[str] = mapped_column(String(50), nullable=False)
     # Keep this as text and do not add a foreign key: audit history must survive
     # deletion of the corresponding resource.
     resource_id: Mapped[str] = mapped_column(String(255), nullable=False)
-    details: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict)
+    details: Mapped[dict[str, object]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=dict,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

@@ -72,6 +72,17 @@ export default defineConfig({
     fs: {
       strict: true,
     },
+    // Optional same-origin proxy to the FastAPI service during local/dev previews.
+    proxy: {
+      '/api': {
+        target: process.env.TRUSTVAULT_API_PROXY_TARGET || 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
+      '/healthz': {
+        target: process.env.TRUSTVAULT_API_PROXY_TARGET || 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
+    },
   },
   preview: {
     port,

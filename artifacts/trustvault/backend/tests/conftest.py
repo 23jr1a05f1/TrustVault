@@ -64,9 +64,14 @@ class SecurityTestEnvironment:
     def sign_in_as(self, clerk_id: str) -> None:
         self.auth_context["clerk_id"] = clerk_id
 
-    def add_user(self, clerk_id: str, role: str = "member") -> UUID:
+    def add_user(
+        self,
+        clerk_id: str,
+        role: str = "member",
+        email: str | None = None,
+    ) -> UUID:
         with self.session_factory() as db:
-            user = User(clerk_id=clerk_id, role=role)
+            user = User(clerk_id=clerk_id, role=role, email=email)
             db.add(user)
             db.commit()
             return user.id

@@ -1,11 +1,13 @@
+
 from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app import auth
+from app.routes import security as security_routes
 from app.models import AuditEvent, DocumentPermission, User
 from conftest import SecurityTestEnvironment
 
@@ -17,9 +19,12 @@ def test_new_verified_account_defaults_to_member(
 
     assert response.status_code == 200
     assert response.json()["role"] == "member"
+
     with test_env.session_factory() as db:
         user = db.scalar(
-            select(User).where(User.clerk_id == test_env.auth_context["clerk_id"])
+            select(User).where(
+                User.clerk_id == test_env.auth_context["clerk_id"]
+            )
         )
         assert user is not None
         assert user.role == "member"
@@ -34,11 +39,13 @@ def test_missing_clerk_session_is_401_and_audited(
         reason = SimpleNamespace(name="SESSION_TOKEN_MISSING")
 
     monkeypatch.setattr(auth, "authenticate_request", lambda *_args: SignedOut())
-    # Remove only the test identity override so this request exercises Clerk's
-    # production verification dependency with a missing session token.
+
+    # Remove only the test identity override so this request exercises
+    # Clerk's production verification dependency with a missing session token.
     from app.main import app
 
     app.dependency_overrides.pop(auth.require_clerk_identity, None)
+
     response = test_env.client.request("GET", "/api/me")
 
     assert response.status_code == 401
@@ -116,6 +123,7 @@ def test_non_owner_cannot_read_or_enumerate_documents(
     assert unauthorized.status_code == 404
     assert guessed.status_code == 404
     assert "Private plan.pdf" not in unauthorized.text
+
     denied_reads = [
         event
         for event in test_env.audit_events()
@@ -127,18 +135,26 @@ def test_non_owner_cannot_read_or_enumerate_documents(
 
 def test_owner_grants_then_revokes_viewer_access_immediately(
     test_env: SecurityTestEnvironment,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     owner_id = test_env.add_user("user-owner")
     viewer_id = test_env.add_user("user-viewer")
     document_id = test_env.add_document(owner_id)
 
+    # Mock Clerk's verified-email lookup; no real Clerk API call is made.
+    monkeypatch.setattr(
+        security_routes,
+        "_find_verified_clerk_user",
+        lambda _settings, _email: SimpleNamespace(id="user-viewer"),
+    )
+
     test_env.sign_in_as("user-owner")
     grant = test_env.client.request(
         "POST",
         f"/api/documents/{document_id}/permissions",
-        {"user_id": str(viewer_id), "access_level": "read"},
+        {"email": "viewer@example.com", "access_level": "read"},
     )
-    assert grant.status_code == 201
+    assert grant.status_code == 201, grant.text
 
     test_env.sign_in_as("user-viewer")
     allowed = test_env.client.request(
@@ -161,6 +177,7 @@ def test_owner_grants_then_revokes_viewer_access_immediately(
         f"/api/documents/{document_id}",
     )
     assert denied.status_code == 404
+
     with test_env.session_factory() as db:
         grant_row = db.scalar(
             select(DocumentPermission).where(
@@ -182,15 +199,18 @@ def test_viewer_cannot_grant_permissions(
 ) -> None:
     owner_id = test_env.add_user("user-owner")
     viewer_id = test_env.add_user("user-viewer")
-    target_id = test_env.add_user("user-target")
+    test_env.add_user("user-target")
     document_id = test_env.add_document(owner_id)
-    test_env.add_permission(document_id, viewer_id, owner_id, access_level="read")
+    test_env.add_permission(
+        document_id, viewer_id, owner_id, access_level="read"
+    )
     test_env.sign_in_as("user-viewer")
 
+    # A valid email payload lets the endpoint reach its authorization check.
     response = test_env.client.request(
         "POST",
         f"/api/documents/{document_id}/permissions",
-        {"user_id": str(target_id), "access_level": "read"},
+        {"email": "target@example.com", "access_level": "read"},
     )
 
     assert response.status_code == 404
@@ -211,20 +231,25 @@ def test_audit_rows_cannot_be_updated_or_deleted(
     test_env.client.request("GET", f"/api/documents/{document_id}")
 
     event_id = test_env.audit_events()[0].id
+
     with test_env.session_factory() as db:
         audit_event = db.get(AuditEvent, event_id)
         assert audit_event is not None
         audit_event.outcome = "success"
+
         with pytest.raises(IntegrityError):
             db.commit()
+
         db.rollback()
 
     with test_env.session_factory() as db:
         audit_event = db.get(AuditEvent, event_id)
         assert audit_event is not None
         db.delete(audit_event)
+
         with pytest.raises(IntegrityError):
             db.commit()
+
         db.rollback()
 
 
@@ -270,9 +295,7 @@ def test_document_list_shows_only_authorized_documents(
 
     assert "My document.pdf" in names
     assert "Private document.pdf" not in names
-    assert all(
-        "storage_key" not in document for document in documents
-    )
+    assert all("storage_key" not in document for document in documents)
 
     assert any(
         event.event_type == "document.list"
