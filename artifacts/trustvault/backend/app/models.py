@@ -1,4 +1,5 @@
-"""Database models for users, document permissions, and audit events."""
+
+"""Database models for users, document versions, permissions, and audit events."""
 
 from datetime import datetime
 from uuid import UUID, uuid4
@@ -82,7 +83,7 @@ class Document(Base):
     category: Mapped[str] = mapped_column(String(100), nullable=False)
     content_type: Mapped[str] = mapped_column(String(150), nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
-    # This is a private storage locator, never a public or reusable download URL.
+    # Private storage locator; never a public download URL.
     storage_key: Mapped[str] = mapped_column(String(512), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -103,6 +104,11 @@ class Document(Base):
     permissions: Mapped[list["DocumentPermission"]] = relationship(
         back_populates="document",
         cascade="all, delete-orphan",
+    )
+    versions: Mapped[list["DocumentVersion"]] = relationship(
+        back_populates="document",
+        cascade="all, delete-orphan",
+        order_by="DocumentVersion.version_number",
     )
 
 
@@ -179,8 +185,7 @@ class AuditEvent(Base):
     )
     outcome: Mapped[str] = mapped_column(String(16), nullable=False)
     resource_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    # Keep this as text and do not add a foreign key: audit history must survive
-    # deletion of the corresponding resource.
+    # Keep as text so audit history can survive resource deletion.
     resource_id: Mapped[str] = mapped_column(String(255), nullable=False)
     details: Mapped[dict[str, object]] = mapped_column(
         JSON,
@@ -193,3 +198,57 @@ class AuditEvent(Base):
         server_default=func.now(),
         index=True,
     )
+
+
+class DocumentVersion(Base):
+    """An immutable stored version of a document."""
+
+    __tablename__ = "trustvault_document_versions"
+    __table_args__ = (
+        UniqueConstraint(
+            "document_id",
+            "version_number",
+            name="uq_trustvault_document_version_number",
+        ),
+        UniqueConstraint(
+            "storage_key",
+            name="uq_trustvault_document_version_storage_key",
+        ),
+        CheckConstraint(
+            "version_number >= 1",
+            name="ck_trustvault_document_version_number",
+        ),
+        CheckConstraint(
+            "size_bytes >= 0",
+            name="ck_trustvault_document_version_size",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+    document_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("trustvault_documents.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    storage_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(150), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    uploaded_by_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("trustvault_users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    document: Mapped[Document] = relationship(back_populates="versions")
+    uploaded_by: Mapped[User | None] = relationship()

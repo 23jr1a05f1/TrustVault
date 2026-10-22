@@ -118,7 +118,6 @@ def test_user_cannot_download_after_permission_is_revoked(
     test_env.add_user("revocation-owner")
     viewer_id = test_env.add_user("revocation-viewer")
 
-    # Simulate Clerk finding the viewer's verified email.
     monkeypatch.setattr(
         security_routes,
         "_find_verified_clerk_user",
@@ -127,7 +126,6 @@ def test_user_cannot_download_after_permission_is_revoked(
         ),
     )
 
-    # Owner uploads a document.
     test_env.sign_in_as("revocation-owner")
 
     upload_response = test_env.client.upload(
@@ -140,7 +138,6 @@ def test_user_cannot_download_after_permission_is_revoked(
     assert upload_response.status_code == 201, upload_response.text
     document_id = upload_response.json()["id"]
 
-    # Owner grants the viewer read permission using their email.
     grant_response = test_env.client.request(
         "POST",
         f"/api/documents/{document_id}/permissions",
@@ -152,7 +149,6 @@ def test_user_cannot_download_after_permission_is_revoked(
 
     assert grant_response.status_code in (200, 201), grant_response.text
 
-    # Viewer should be able to download the document.
     test_env.sign_in_as("revocation-viewer")
 
     allowed_response = test_env.client.request(
@@ -162,7 +158,6 @@ def test_user_cannot_download_after_permission_is_revoked(
 
     assert allowed_response.status_code == 200, allowed_response.text
 
-    # Owner revokes the viewer's permission.
     test_env.sign_in_as("revocation-owner")
 
     revoke_response = test_env.client.request(
@@ -172,7 +167,6 @@ def test_user_cannot_download_after_permission_is_revoked(
 
     assert revoke_response.status_code == 204, revoke_response.text
 
-    # Viewer must no longer be able to download the document.
     test_env.sign_in_as("revocation-viewer")
 
     denied_response = test_env.client.request(
@@ -181,3 +175,124 @@ def test_user_cannot_download_after_permission_is_revoked(
     )
 
     assert denied_response.status_code == 404
+
+
+def test_owner_can_upload_new_version_and_view_history(
+    test_env, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(document_routes, "STORAGE_DIR", tmp_path)
+
+    test_env.add_user("version-owner")
+    test_env.sign_in_as("version-owner")
+
+    first_content = b"Original version"
+    upload_response = test_env.client.upload(
+        "/api/documents",
+        filename="versioned-note.txt",
+        content=first_content,
+        content_type="text/plain",
+    )
+
+    assert upload_response.status_code == 201, upload_response.text
+    document_id = upload_response.json()["id"]
+
+    second_content = b"Updated version"
+    version_response = test_env.client.upload(
+        f"/api/documents/{document_id}/versions",
+        filename="versioned-note.txt",
+        content=second_content,
+        content_type="text/plain",
+    )
+
+    assert version_response.status_code == 201, version_response.text
+    assert version_response.json()["version_number"] == 2
+
+    history_response = test_env.client.request(
+        "GET",
+        f"/api/documents/{document_id}/versions",
+    )
+
+    assert history_response.status_code == 200, history_response.text
+
+    history = history_response.json()
+    assert [item["version_number"] for item in history] == [2, 1]
+    assert all("uploaded_by" in item for item in history)
+
+    latest_response = test_env.client.request(
+        "GET",
+        f"/api/documents/{document_id}/download",
+    )
+
+    assert latest_response.status_code == 200
+    assert latest_response.content == second_content
+
+    old_response = test_env.client.request(
+        "GET",
+        f"/api/documents/{document_id}/versions/1/download",
+    )
+
+    assert old_response.status_code == 200
+    assert old_response.content == first_content
+
+
+def test_viewer_cannot_access_version_history_or_old_versions(
+    test_env, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(document_routes, "STORAGE_DIR", tmp_path)
+
+    test_env.add_user("history-viewer")
+    test_env.add_user("history-owner")
+
+    monkeypatch.setattr(
+        security_routes,
+        "_find_verified_clerk_user",
+        lambda _settings, _email: SimpleNamespace(
+            id="history-viewer"
+        ),
+    )
+
+    test_env.sign_in_as("history-owner")
+
+    upload_response = test_env.client.upload(
+        "/api/documents",
+        filename="shared-versioned-note.txt",
+        content=b"Original content",
+        content_type="text/plain",
+    )
+
+    assert upload_response.status_code == 201, upload_response.text
+    document_id = upload_response.json()["id"]
+
+    grant_response = test_env.client.request(
+        "POST",
+        f"/api/documents/{document_id}/permissions",
+        body={
+            "email": "viewer@example.com",
+            "access_level": "read",
+        },
+    )
+
+    assert grant_response.status_code in (200, 201), grant_response.text
+
+    test_env.sign_in_as("history-viewer")
+
+    latest_response = test_env.client.request(
+        "GET",
+        f"/api/documents/{document_id}/download",
+    )
+
+    assert latest_response.status_code == 200, latest_response.text
+
+    history_response = test_env.client.request(
+        "GET",
+        f"/api/documents/{document_id}/versions",
+    )
+
+    assert history_response.status_code == 404
+
+    old_response = test_env.client.request(
+        "GET",
+        f"/api/documents/{document_id}/versions/1/download",
+    )
+
+    assert old_response.status_code == 404
