@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Download, FileText, Loader2, RefreshCw } from 'lucide-react';
 import { ShareDialog } from '@/components/dashboard/share-dialog';
+import { VersionHistoryDialog } from '@/components/dashboard/version-history-dialog';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -24,6 +25,7 @@ import { useToast } from '@/hooks/use-toast';
 import {
   type DocumentSummary,
   TrustVaultApiError,
+  canAccessVersionHistory,
   canManageSharing,
   downloadDocument,
 } from '@/lib/trustvault-api';
@@ -65,6 +67,7 @@ export function DocumentList({
 
   const onDownload = async (document: DocumentSummary) => {
     setDownloadingId(document.id);
+
     try {
       await downloadDocument(getToken, document.id, document.name);
       toast({
@@ -76,6 +79,7 @@ export function DocumentList({
         error instanceof TrustVaultApiError
           ? error.detail
           : 'Download failed';
+
       toast({
         variant: 'destructive',
         title: 'Download failed',
@@ -96,6 +100,7 @@ export function DocumentList({
             <code className="text-xs">GET /api/documents</code>.
           </p>
         </div>
+
         <Button
           type="button"
           variant="outline"
@@ -151,9 +156,11 @@ export function DocumentList({
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
+
                 <TableBody>
                   {documents.map((document) => {
                     const isMine = currentUserId === document.owner_id;
+
                     return (
                       <TableRow key={document.id}>
                         <TableCell className="max-w-[16rem] font-medium">
@@ -161,17 +168,21 @@ export function DocumentList({
                             {document.name}
                           </span>
                         </TableCell>
+
                         <TableCell className="text-muted-foreground">
                           {document.category}
                         </TableCell>
+
                         <TableCell>
                           <Badge variant={roleBadgeVariant(document.role)}>
                             {document.role}
                           </Badge>
                         </TableCell>
+
                         <TableCell className="font-mono text-xs text-muted-foreground">
                           {isMine ? 'You' : shortId(document.owner_id)}
                         </TableCell>
+
                         <TableCell>
                           <div className="flex justify-end gap-2">
                             <Button
@@ -188,6 +199,15 @@ export function DocumentList({
                               )}
                               Download
                             </Button>
+
+                            {canAccessVersionHistory(document.role) ? (
+                              <VersionHistoryDialog
+                                document={document}
+                                getToken={getToken}
+                                onChanged={onRefresh}
+                              />
+                            ) : null}
+
                             {canManageSharing(document.role) ? (
                               <ShareDialog
                                 document={document}
@@ -206,6 +226,7 @@ export function DocumentList({
             <div className="grid gap-3 md:hidden">
               {documents.map((document) => {
                 const isMine = currentUserId === document.owner_id;
+
                 return (
                   <article
                     key={document.id}
@@ -216,15 +237,18 @@ export function DocumentList({
                         <h3 className="truncate font-medium" title={document.name}>
                           {document.name}
                         </h3>
+
                         <p className="mt-1 text-sm text-muted-foreground">
                           {document.category} · Owner{' '}
                           {isMine ? 'you' : shortId(document.owner_id)}
                         </p>
                       </div>
+
                       <Badge variant={roleBadgeVariant(document.role)}>
                         {document.role}
                       </Badge>
                     </div>
+
                     <div className="mt-4 flex flex-wrap gap-2">
                       <Button
                         type="button"
@@ -240,6 +264,15 @@ export function DocumentList({
                         )}
                         Download
                       </Button>
+
+                      {canAccessVersionHistory(document.role) ? (
+                        <VersionHistoryDialog
+                          document={document}
+                          getToken={getToken}
+                          onChanged={onRefresh}
+                        />
+                      ) : null}
+
                       {canManageSharing(document.role) ? (
                         <ShareDialog document={document} getToken={getToken} />
                       ) : null}

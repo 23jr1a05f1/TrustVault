@@ -40,6 +40,32 @@ export type DocumentPermissionEntry = {
   access_level: AccessLevel;
 };
 
+export type DocumentVersion = {
+  version_number: number;
+  size_bytes: number;
+  content_type: string;
+  created_at: string;
+  uploaded_by?: {
+    id: string;
+    email: string | null;
+  } | null;
+};
+
+export type VersionUploadResult = {
+  document_id: string;
+  version_number: number;
+  size_bytes: number;
+  created_at: string;
+};
+
+export type VersionRestoreResult = {
+  document_id: string;
+  restored_from_version: number;
+  version_number: number;
+  size_bytes: number;
+  created_at: string;
+};
+
 export class TrustVaultApiError extends Error {
   readonly status: number;
   readonly detail: string;
@@ -172,7 +198,7 @@ export async function downloadDocument(
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
-  URL.revokeObjectURL(objectUrl);
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
 }
 
 export async function listDocumentPermissions(
@@ -221,6 +247,90 @@ export async function revokeDocumentPermission(
   );
 }
 
+/** Upload a new version of an existing document. */
+export async function uploadDocumentVersion(
+  getToken: () => Promise<string | null>,
+  documentId: string,
+  file: File,
+): Promise<VersionUploadResult> {
+  const form = new FormData();
+  form.append('file', file);
+
+  const response = await apiFetch(
+    `/api/documents/${documentId}/versions`,
+    { method: 'POST', body: form },
+    getToken,
+  );
+
+  return (await response.json()) as VersionUploadResult;
+}
+
+/** List version metadata available to the current user. */
+export async function listDocumentVersions(
+  getToken: () => Promise<string | null>,
+  documentId: string,
+): Promise<DocumentVersion[]> {
+  const response = await apiFetch(
+    `/api/documents/${documentId}/versions`,
+    { method: 'GET' },
+    getToken,
+  );
+
+  return (await response.json()) as DocumentVersion[];
+}
+
+/** Download a specific version of a document. */
+export async function downloadDocumentVersion(
+  getToken: () => Promise<string | null>,
+  documentId: string,
+  versionNumber: number,
+  filename: string,
+): Promise<void> {
+  const response = await apiFetch(
+    `/api/documents/${documentId}/versions/${versionNumber}/download`,
+    { method: 'GET' },
+    getToken,
+  );
+
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+
+  anchor.href = objectUrl;
+  anchor.download = filename || 'document';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+}
+
+/** Restore an older version as a new version. */
+export async function restoreDocumentVersion(
+  getToken: () => Promise<string | null>,
+  documentId: string,
+  versionNumber: number,
+): Promise<VersionRestoreResult> {
+  const response = await apiFetch(
+    `/api/documents/${documentId}/versions/${versionNumber}/restore`,
+    { method: 'POST' },
+    getToken,
+  );
+
+  return (await response.json()) as VersionRestoreResult;
+}
+
 export function canManageSharing(role: DocumentRole): boolean {
+  return role === 'admin' || role === 'owner';
+}
+
+export function canAccessVersionHistory(role: DocumentRole): boolean {
+  return role === 'admin' || role === 'owner' || role === 'editor';
+}
+
+export function canUploadDocumentVersion(role: DocumentRole): boolean {
+  return role === 'admin' || role === 'owner' || role === 'editor';
+}
+
+export function canRestoreDocumentVersion(role: DocumentRole): boolean {
   return role === 'admin' || role === 'owner';
 }
