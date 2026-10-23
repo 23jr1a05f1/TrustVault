@@ -1,12 +1,12 @@
+
 """Private document upload, download, restore, and version-history endpoints."""
 
-import os
-import shutil
 from pathlib import Path
-from uuid import UUID, uuid4
+from urllib.parse import quote
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -14,13 +14,22 @@ from app.authorization import can_read, effective_document_role, record_audit
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.models import Document, DocumentVersion, User
+from app.storage import (
+    STORAGE_BACKEND,
+    copy_object,
+    delete_object,
+    new_storage_key as generate_storage_key,
+    object_exists,
+    read_bytes,
+    save_bytes,
+)
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MiB
 CHUNK_SIZE = 64 * 1024
 STORAGE_DIR = Path(
-    os.environ.get("TRUSTVAULT_STORAGE_DIR", "private_storage")
+    __import__("os").environ.get("TRUSTVAULT_STORAGE_DIR", "private_storage")
 ).resolve()
 
 
@@ -71,7 +80,7 @@ def _get_document_role(
 
 
 def _safe_file_path(storage_key: str) -> Path | None:
-    """Return a path inside private storage, or None for an invalid/missing file."""
+    """Return a safe local path if the requested file exists."""
     if not storage_key or Path(storage_key).name != storage_key:
         return None
 
@@ -83,33 +92,104 @@ def _safe_file_path(storage_key: str) -> Path | None:
     return file_path
 
 
+def _storage_file_exists(storage_key: str) -> bool:
+    """Check for an object in the explicitly selected storage backend."""
+    try:
+        return object_exists(storage_key)
+    except (ValueError, RuntimeError):
+        return False
+
+
+def _cleanup_storage_key(storage_key: str | None) -> None:
+    """Best-effort cleanup after a failed database operation."""
+    if storage_key is None:
+        return
+
+    try:
+        delete_object(storage_key)
+    except Exception:
+        import logging
+
+        logging.getLogger(__name__).exception(
+            "Could not clean up stored object after a failed operation"
+        )
+
+
+def _download_response(
+    storage_key: str,
+    filename: str,
+    content_type: str | None,
+) -> Response:
+    """Return a private download response for either storage backend."""
+    if not storage_key or Path(storage_key).name != storage_key:
+        raise HTTPException(status_code=404, detail="Document file not found")
+
+    media_type = content_type or "application/octet-stream"
+
+    if STORAGE_BACKEND == "local":
+        file_path = _safe_file_path(storage_key)
+        if file_path is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Document file not found",
+            )
+
+        return FileResponse(
+            path=file_path,
+            media_type=media_type,
+            filename=filename,
+            headers={
+                "Cache-Control": "private, no-store",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
+
+    content = read_bytes(storage_key)
+    if content is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Document file not found",
+        )
+
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": (
+                f"attachment; filename*=UTF-8''{quote(filename, safe='')}"
+            ),
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
 async def _save_upload(file: UploadFile) -> tuple[str, int]:
     """Save an upload under a server-generated key and enforce the size limit."""
-    storage_key = uuid4().hex
-    STORAGE_DIR.mkdir(parents=True, exist_ok=True)
-    destination = STORAGE_DIR / storage_key
+    storage_key = generate_storage_key()
+    chunks: list[bytes] = []
     size = 0
 
     try:
-        with destination.open("xb") as output:
-            while True:
-                chunk = await file.read(CHUNK_SIZE)
-                if not chunk:
-                    break
+        while True:
+            chunk = await file.read(CHUNK_SIZE)
+            if not chunk:
+                break
 
-                size += len(chunk)
-                if size > MAX_FILE_SIZE:
-                    raise HTTPException(
-                        status_code=413,
-                        detail="File exceeds the 10 MiB upload limit",
-                    )
+            size += len(chunk)
+            if size > MAX_FILE_SIZE:
+                raise HTTPException(
+                    status_code=413,
+                    detail="File exceeds the 10 MiB upload limit",
+                )
 
-                output.write(chunk)
+            chunks.append(chunk)
 
+        save_bytes(storage_key, b"".join(chunks))
         return storage_key, size
 
     except Exception:
-        destination.unlink(missing_ok=True)
+        _cleanup_storage_key(storage_key)
         raise
 
 
@@ -177,8 +257,7 @@ async def upload_document(
 
     except Exception:
         db.rollback()
-        if storage_key is not None:
-            (STORAGE_DIR / storage_key).unlink(missing_ok=True)
+        _cleanup_storage_key(storage_key)
         raise
 
     finally:
@@ -258,8 +337,7 @@ async def upload_document_version(
 
     except Exception:
         db.rollback()
-        if storage_key is not None:
-            (STORAGE_DIR / storage_key).unlink(missing_ok=True)
+        _cleanup_storage_key(storage_key)
         raise
 
     finally:
@@ -382,9 +460,7 @@ def restore_document_version(
         db.commit()
         raise HTTPException(status_code=404, detail="Document version not found")
 
-    source_path = _safe_file_path(source_version.storage_key)
-
-    if source_path is None:
+    if not _storage_file_exists(source_version.storage_key):
         _audit(
             db,
             user,
@@ -409,24 +485,22 @@ def restore_document_version(
     )
     next_version = (current_max or 0) + 1
 
-    new_storage_key = uuid4().hex
-    STORAGE_DIR.mkdir(parents=True, exist_ok=True)
-    destination = STORAGE_DIR / new_storage_key
+    restored_storage_key = generate_storage_key()
 
     try:
-        shutil.copyfile(source_path, destination)
+        copy_object(source_version.storage_key, restored_storage_key)
 
         restored_version = DocumentVersion(
             document_id=document.id,
             version_number=next_version,
-            storage_key=new_storage_key,
+            storage_key=restored_storage_key,
             content_type=source_version.content_type,
             size_bytes=source_version.size_bytes,
             uploaded_by_id=user.id,
         )
         db.add(restored_version)
 
-        document.storage_key = new_storage_key
+        document.storage_key = restored_storage_key
         document.content_type = source_version.content_type
         document.size_bytes = source_version.size_bytes
 
@@ -456,7 +530,7 @@ def restore_document_version(
 
     except Exception:
         db.rollback()
-        destination.unlink(missing_ok=True)
+        _cleanup_storage_key(restored_storage_key)
         raise
 
 
@@ -466,7 +540,7 @@ def download_document_version(
     version_number: int,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> FileResponse:
+) -> Response:
     """Download a previous version. Owners and Editors may access version history."""
     document, role = _get_document_role(db, user, document_id)
 
@@ -501,9 +575,7 @@ def download_document_version(
         db.commit()
         raise HTTPException(status_code=404, detail="Document version not found")
 
-    file_path = _safe_file_path(version.storage_key)
-
-    if file_path is None:
+    if not _storage_file_exists(version.storage_key):
         _audit(
             db,
             user,
@@ -528,11 +600,10 @@ def download_document_version(
     )
     db.commit()
 
-    return FileResponse(
-        path=file_path,
-        media_type=version.content_type,
-        filename=document.name,
-        headers={"Cache-Control": "private, no-store"},
+    return _download_response(
+        version.storage_key,
+        document.name,
+        version.content_type,
     )
 
 
@@ -541,13 +612,11 @@ def download_document(
     document_id: UUID,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> FileResponse:
+) -> Response:
     """Download the latest document when the user has read access."""
     document, role = _get_document_role(db, user, document_id)
 
-    file_path = _safe_file_path(document.storage_key)
-
-    if file_path is None:
+    if not _storage_file_exists(document.storage_key):
         _audit(
             db,
             user,
@@ -567,9 +636,8 @@ def download_document(
     )
     db.commit()
 
-    return FileResponse(
-        path=file_path,
-        media_type=document.content_type or "application/octet-stream",
-        filename=document.name,
-        headers={"Cache-Control": "private, no-store"},
+    return _download_response(
+        document.storage_key,
+        document.name,
+        document.content_type,
     )
