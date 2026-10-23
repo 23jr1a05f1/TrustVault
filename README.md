@@ -50,3 +50,34 @@ TrustVault/
 ├── THREATS.md                   # Security threats and mitigations
 └── README.md                    # Project overview
 ```
+
+## Role–Action Matrix
+
+TrustVault uses account roles and document-specific permissions to control access.
+
+### Admin
+- Allowed: View documents, download authorized documents, manage document permissions, and change account roles.
+- Not allowed: Access documents without authorization.
+
+### Owner
+- Allowed: View and download their documents, grant permissions, and revoke permissions.
+- Not allowed: Change account roles or access unrelated documents without authorization.
+
+### Editor
+- Allowed: View and download documents they can access.
+- Not allowed: Grant or revoke permissions, change account roles, or access unauthorized documents.
+
+### Viewer
+- Allowed: View and download documents they can access.
+- Not allowed: Grant or revoke permissions, change account roles, or access unauthorized documents.
+
+### Member Without Document Access
+- Allowed: Sign in and use other authorized features.
+- Not allowed: View or download documents they have not been permitted to access.
+
+### Notes
+- Admin is an account-level role.
+- Owner, Editor, and Viewer describe access to individual documents.
+- Document owners and administrators can grant or revoke document permissions.
+- The backend checks authorization for protected operations.
+- Document upload permissions depend on the actual backend authorization rules and should be verified before being documented as allowed for every role.
