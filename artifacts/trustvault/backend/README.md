@@ -1,41 +1,56 @@
 # TrustVault API
 
-This is the Python/FastAPI service for TrustVault. It is intentionally separate
-from the workspace's shared TypeScript/Express API.
+This is the Python/FastAPI backend service for TrustVault. It handles authentication, authorization, document operations, and security auditing.
+
+## Requirements
+
+- Python 3.11 or newer
+- `uv` for Python dependency management
+- A configured PostgreSQL database
+- Clerk authentication configuration
 
 ## Setup
 
-Use Python 3.11 or newer. Install the project and development dependencies with
-your Python package manager, including the `dev` extra from `pyproject.toml`.
-The Replit environment for this project already has these packages installed.
-
-## Run
-
-From this directory:
+Run the following commands from this directory:
 
 ```bash
-python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uv sync
 ```
 
-Apply the development database schema and start the API:
+Configure the required database and Clerk environment variables locally. Never commit secrets or `.env` files.
+
+## Database Migration
+
+Apply the database migrations before starting the API:
 
 ```bash
 python -m alembic upgrade head
-python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Open `/healthz` for health checks, `/docs` for generated API documentation, or
-`/api/me` after a Clerk session is available.
-
-## Test
-
-From this directory:
+## Run the API
 
 ```bash
-python -m pytest
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-The first migration creates the TrustVault user, document metadata, document
-permission, and append-only audit tables. Protected API routes verify Clerk
-sessions and enforce roles from the database. See `docs/SECURITY.md` for
-configuration, migration, and test coverage details.
+Useful endpoints:
+
+- `/healthz` — API health check
+- `/docs` — interactive API documentation
+- `/api/me` — current authenticated user's information; requires a valid Clerk session
+
+## Run Tests
+
+```bash
+python -m pytest -q
+```
+
+## Security Notes
+
+The backend verifies Clerk sessions and enforces authorization using database roles and document permissions. It also records security-relevant audit events.
+
+The initial database migration creates tables for users, document metadata, document permissions, and audit records.
+
+See `docs/SECURITY.md` for additional details about security configuration, migrations, and test coverage.
+
+Use non-sensitive test documents until production storage and deployed document workflows have been verified.

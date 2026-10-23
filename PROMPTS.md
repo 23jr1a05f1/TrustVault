@@ -2,7 +2,9 @@
 
 ## Purpose
 
-This file records genuine AI-assisted development work performed on TrustVault. Entries must reflect actual interactions and outcomes. Do not invent prompts, test results, dates, or commit history.
+This file records AI-assisted development work performed on TrustVault for the Snovasys hiring challenge. Entries should reflect genuine interactions, actual changes, and verified outcomes.
+
+Do not invent prompts, test results, dates, or commit history. If a result has not been verified, identify it as pending.
 
 For each significant interaction, record:
 
@@ -13,25 +15,41 @@ For each significant interaction, record:
 - **Mistake or limitation:** A specific issue identified, or an honest statement if none was identified.
 - **Correction:** The change actually made.
 - **Verification:** The command, test, or manual check performed and its actual result.
-- **Commit:** The real commit hash or GitHub link, when applicable.
+- **Commit:** The real commit hash or GitHub commit link, when applicable.
 
 ## Development History
 
 ### Entry — 21 October 2026
 
-- **Task:** Update the TrustVault threat model to reflect the implemented document upload and download functionality.
+- **Task:** Review the backend security implementation and update the threat model.
 
 - **Prompt actually used:** "first complete the security code i think its done now u viewed threats update this then for next files"
 
-- **AI output summary:** Reviewed the existing threat model and prepared an updated version covering document upload limits, private file storage, authorized downloads, permission revocation, audit events, and outstanding production security risks.
+- **AI output summary:** Assisted with reviewing the existing security documentation and preparing updates covering private document storage, upload-size limits, authorized downloads, permission revocation, audit events, and outstanding security risks.
 
-- **Specific mistake or limitation identified:** The previous threat model incorrectly listed private file storage, upload validation, and authorized downloads as pending, although the current implementation and automated tests cover important parts of these features. Production storage durability and deployment security have not been verified.
+- **Specific mistake or limitation identified:** Documentation must distinguish implemented controls from features or deployment settings that have not been verified. Production storage durability and deployment security cannot be established solely by passing local tests.
 
-- **Correction made:** Updated `THREATS.md` to distinguish implemented controls from outstanding risks. Updated `docs/SECURITY.md` to reflect the current document endpoints, upload-size limit, authorization checks, and known limitations.
+- **Correction made:** Updated `THREATS.md` and `docs/SECURITY.md` to describe implemented security controls and known limitations.
 
-- **Verification performed and actual result:** `git status --short` showed `M THREATS.md` and `M docs/SECURITY.md`. The latest full backend test run before these documentation edits reported `16 passed in 0.65s`. The tests should be rerun before the documentation changes are committed.
+- **Verification performed and actual result:** The recorded test result at that time was `16 passed in 0.65s`. The recorded Git status showed `M THREATS.md` and `M docs/SECURITY.md`. These results relate to the state at that time and do not verify later documentation edits.
 
-- **Commit hash or GitHub commit link:** Pending. Documentation changes have not yet been committed.
+- **Commit hash or GitHub commit link:** Not recorded for this documentation update.
+
+### Entry — 23 October 2026
+
+- **Task:** Improve the public project README and update the threat model to reflect the current TrustVault project.
+
+- **Prompt actually used:** "i just wnt the project overview ,features,techstack used,project structure"
+
+- **AI output summary:** Prepared a simplified README structure covering the project overview, features, technology stack, and project structure. Also prepared a revised threat model describing security controls, risks, testing, and remaining work.
+
+- **Specific mistake or limitation identified:** Markdown tables can appear merged when viewed in a plain-text editor such as Notepad. The project documentation also needed to avoid publishing the live application URLs.
+
+- **Correction made:** Changed the technology stack to a bullet list for cleaner editing in Notepad. Prepared revised versions of `README.md` and `THREATS.md` without live application URLs.
+
+- **Verification performed and actual result:** The user confirmed that the documentation files were saved. The complete contents of the saved files have not been independently inspected after saving. The latest recorded backend test result in the project context was `31 passed in 3.18s`; that result predates these documentation edits.
+
+- **Commit hash or GitHub commit link:** Pending verification. Do not record a commit until the documentation changes have actually been committed.
 
 ## Entry Template
 
